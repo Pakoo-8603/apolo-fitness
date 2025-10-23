@@ -29,6 +29,7 @@ function createEmptyState () {
     widgets: [],
     widgetFilters: [],
     sourceSamples: {},
+    generatedAt: null,
   }
 }
 
@@ -72,6 +73,7 @@ export const useKpiStore = defineStore('kpis', () => {
       state[collection] = Array.isArray(dataset[collection]) ? dataset[collection] : []
     }
     state.sourceSamples = dataset.sourceSamples || {}
+    state.generatedAt = dataset.generated_at || null
     lastUpdated.value = Date.now()
   }
 
@@ -142,6 +144,7 @@ export const useKpiStore = defineStore('kpis', () => {
   const metricsById = computed(() => mapBy(state.metrics))
   const definitionsById = computed(() => mapBy(state.definitions))
   const dashboardsById = computed(() => mapBy(state.dashboards))
+  const generatedAt = computed(() => (state.generatedAt ? new Date(state.generatedAt) : null))
 
   const definitionComponents = computed(() => groupBy(state.definitionMetrics, 'definition_id'))
   const metricFiltersByMetric = computed(() => groupBy(state.metricFilters, 'metric_id'))
@@ -411,6 +414,7 @@ export const useKpiStore = defineStore('kpis', () => {
     error,
     lastUpdated,
     history,
+    generatedAt,
 
     // getters
     activeEmpresaId,

@@ -31,12 +31,13 @@
 
     <section v-if="loading" class="py-24 text-center text-sm text-slate-500">Cargando dashboard…</section>
     <section v-else-if="!dashboard" class="py-24 text-center text-sm text-slate-500">No hay dashboards configurados para esta empresa.</section>
-    <section v-else class="grid auto-rows-[minmax(200px,auto)] gap-4" :style="gridTemplateStyle">
+    <section v-else class="grid gap-4" :style="gridTemplateStyle">
       <WidgetRenderer
         v-for="card in widgetResults"
-        :key="card.widget.id"
-        :model="card"
+        :key="card.output.widget.id"
+        :model="card.output"
         :loading="false"
+        :style="card.layout"
         class="min-h-[200px]"
       />
     </section>
@@ -56,7 +57,7 @@ const workspace = useWorkspaceStore()
 const kpiStore = useKpiStore()
 const engine = useKpiEngine()
 
-const { dashboardsForActiveEmpresa, lastUpdated, activeDashboard } = storeToRefs(kpiStore)
+const { dashboardsForActiveEmpresa, lastUpdated, activeDashboard, generatedAt } = storeToRefs(kpiStore)
 const { sucursales } = storeToRefs(workspace)
 
 const selectedDashboardId = ref(null)
@@ -74,11 +75,18 @@ const timeWindowOptions = TIME_WINDOW_OPTIONS
 
 const gridTemplateStyle = computed(() => {
   const columns = dashboard.value?.layout?.columns || 12
-  return { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+  const rowHeight = dashboard.value?.layout?.rowHeight || 180
+  return {
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+    gridAutoRows: `minmax(${rowHeight}px, auto)`,
+  }
 })
 
 const context = computed(() => {
   const ctx = { timeWindow: selectedTimeWindow.value }
+  if (generatedAt.value instanceof Date && !Number.isNaN(generatedAt.value.getTime())) {
+    ctx.now = generatedAt.value
+  }
   if (selectedTimeWindow.value === 'custom' && customRange.value.start && customRange.value.end) {
     ctx.customRange = { start: customRange.value.start, end: customRange.value.end }
   }
@@ -86,7 +94,27 @@ const context = computed(() => {
   return ctx
 })
 
-const widgetResults = computed(() => widgetModels.value.map(model => engine.resolveWidget(model, context.value)))
+function styleForWidget (widget) {
+  if (!widget) return {}
+  const columns = dashboard.value?.layout?.columns || 12
+  const rowHeight = dashboard.value?.layout?.rowHeight || 180
+  const width = Math.max(1, Math.min(widget.size?.w ?? Math.ceil(columns / 3), columns))
+  const height = Math.max(1, widget.size?.h ?? 1)
+  const startX = Math.min(columns, (widget.position?.x ?? 0) + 1)
+  const availableSpan = Math.max(1, columns - startX + 1)
+  const spanX = Math.min(width, availableSpan)
+  const startY = Math.max(1, (widget.position?.y ?? 0) + 1)
+  return {
+    gridColumn: `${startX} / span ${spanX}`,
+    gridRow: `${startY} / span ${height}`,
+    minHeight: `${rowHeight * height}px`,
+  }
+}
+
+const widgetResults = computed(() => widgetModels.value.map(model => ({
+  output: engine.resolveWidget(model, context.value),
+  layout: styleForWidget(model.widget),
+})))
 
 async function loadDashboard () {
   if (!initialized.value) return
