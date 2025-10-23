@@ -12,7 +12,7 @@
           <span class="text-slate-400">vs previo</span>
         </p>
         <p v-else-if="model.summary.baselineValue != null" class="text-xs text-slate-500">
-          Base: {{ formatBaseline(model.summary.baselineValue) }}
+          Base: {{ formatValue(model.summary.baselineValue, definitionFormatType, definitionFormatExtra) }}
         </p>
       </div>
     </div>
@@ -29,20 +29,38 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in model.breakdown" :key="item.label" class="border-t border-slate-100 dark:border-slate-800">
+            <tr v-for="item in displayBreakdown" :key="item.label" class="border-t border-slate-100 dark:border-slate-800">
               <td class="py-1">{{ item.label }}</td>
-              <td class="py-1 text-right font-medium">{{ formatValue(item.value) }}</td>
+              <td class="py-1 text-right font-medium">{{ formatValue(item.value, definitionFormatType, definitionFormatExtra) }}</td>
             </tr>
           </tbody>
         </table>
-        <ul v-else-if="model.breakdown?.length" class="space-y-1 text-sm text-slate-600 dark:text-slate-200">
-          <li v-for="item in model.breakdown" :key="item.label" class="flex items-center justify-between">
+        <ul v-else-if="displayBreakdown.length" class="space-y-1 text-sm text-slate-600 dark:text-slate-200">
+          <li v-for="item in displayBreakdown" :key="item.label" class="flex items-center justify-between">
             <span>{{ item.label }}</span>
-            <span class="font-medium">{{ formatValue(item.value) }}</span>
+            <span class="font-medium">{{ formatValue(item.value, definitionFormatType, definitionFormatExtra) }}</span>
           </li>
         </ul>
         <p v-else class="text-sm text-slate-500">Sin datos disponibles.</p>
       </div>
+    </div>
+    <div v-if="componentRows.length" class="mt-3">
+      <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Detalles</h4>
+      <ul class="space-y-1 text-xs text-slate-600 dark:text-slate-200">
+        <li v-for="row in componentRows" :key="row.label" class="flex items-center justify-between">
+          <span>{{ row.label }}</span>
+          <span class="font-medium">{{ row.formatted }}</span>
+        </li>
+      </ul>
+    </div>
+    <div v-if="derivedRows.length" class="mt-2">
+      <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Indicadores derivados</h4>
+      <ul class="space-y-1 text-xs text-slate-600 dark:text-slate-200">
+        <li v-for="row in derivedRows" :key="row.label" class="flex items-center justify-between">
+          <span>{{ row.label }}</span>
+          <span class="font-medium">{{ row.formatted }}</span>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
@@ -67,6 +85,9 @@ const title = computed(() => props.model?.widget?.title || props.model?.definiti
 const subtitle = computed(() => props.model?.widget?.subtitle || props.model?.definition?.description || '')
 
 const visualization = computed(() => props.model?.widget?.options?.visualization || (props.model?.series?.length ? 'line' : 'kpi'))
+const sortDirection = computed(() => props.model?.widget?.options?.sortDirection || null)
+const limitRows = computed(() => props.model?.widget?.options?.limitRows || null)
+
 const accentClass = computed(() => {
   const accent = props.model?.widget?.options?.accent
   const map = {
@@ -74,12 +95,16 @@ const accentClass = computed(() => {
     teal: 'border-teal-200/80 dark:border-teal-500/40',
     amber: 'border-amber-200/80 dark:border-amber-500/40',
     sky: 'border-sky-200/80 dark:border-sky-500/40',
+    rose: 'border-rose-200/80 dark:border-rose-500/40',
   }
   return map[accent] || 'border-slate-200 dark:border-slate-700'
 })
 const containerClass = computed(() => `flex h-full flex-col gap-4 rounded-xl border ${accentClass.value} bg-white/80 p-4 shadow-sm backdrop-blur-sm dark:bg-slate-900/70`)
 
-const formattedValue = computed(() => props.model?.summary?.formattedValue ?? formatValue(props.model?.summary?.value))
+const definitionFormatType = computed(() => props.model?.definition?.format_type || 'value')
+const definitionFormatExtra = computed(() => props.model?.definition?.extra_config || {})
+
+const formattedValue = computed(() => props.model?.summary?.formattedValue ?? formatValue(props.model?.summary?.value, definitionFormatType.value, definitionFormatExtra.value))
 const deltaClass = computed(() => {
   if (!props.model?.summary || props.model.summary.deltaPct == null) return 'text-slate-400'
   return props.model.summary.deltaPct >= 0 ? 'text-emerald-600' : 'text-rose-500'
@@ -87,11 +112,35 @@ const deltaClass = computed(() => {
 
 const isTable = computed(() => visualization.value === 'table')
 
+const baseBreakdown = computed(() => props.model?.breakdown ? [...props.model.breakdown] : [])
+const baseSeries = computed(() => props.model?.series ? [...props.model.series] : [])
+
+function applySorting (items) {
+  if (!items.length || !sortDirection.value) return items
+  const sorted = [...items].sort((a, b) => {
+    if (sortDirection.value === 'asc') return (a.value ?? 0) - (b.value ?? 0)
+    if (sortDirection.value === 'desc') return (b.value ?? 0) - (a.value ?? 0)
+    return 0
+  })
+  if (limitRows.value) {
+    return sorted.slice(0, limitRows.value)
+  }
+  return sorted
+}
+
+const displayBreakdown = computed(() => applySorting(baseBreakdown.value))
+
+const displaySeries = computed(() => {
+  if (!baseSeries.value.length) return []
+  if (!sortDirection.value || visualization.value === 'line') return baseSeries.value
+  return applySorting(baseSeries.value)
+})
+
 const chartOptions = computed(() => {
-  if (!props.model || !props.model.series?.length) return null
+  if (!props.model || !displaySeries.value.length) return null
   if (visualization.value === 'kpi' || visualization.value === 'table') return null
-  const labels = props.model.series.map(item => item.label)
-  const values = props.model.series.map(item => item.value)
+  const labels = displaySeries.value.map(item => item.label)
+  const values = displaySeries.value.map(item => item.value)
   if (visualization.value === 'pie') {
     return {
       tooltip: { trigger: 'item' },
@@ -99,7 +148,7 @@ const chartOptions = computed(() => {
       series: [{
         type: 'pie',
         radius: ['40%', '70%'],
-        data: props.model.series.map(item => ({ value: item.value, name: item.label })),
+        data: displaySeries.value.map(item => ({ value: item.value, name: item.label })),
       }],
     }
   }
@@ -119,13 +168,96 @@ const chartOptions = computed(() => {
   return baseOptions
 })
 
-function formatValue (value) {
+const componentRows = computed(() => {
+  if (!props.model?.widget?.options?.showComponents || !props.model?.components?.length) return []
+  const labels = props.model.widget.options.componentLabels || {}
+  const defaultFormat = props.model.widget.options.componentFormat || 'value'
+  const formats = props.model.widget.options.componentFormats || {}
+  const decimalsConfig = props.model.widget.options.componentDecimals || {}
+  return props.model.components.map(component => {
+    const alias = component.alias
+    const label = labels[alias] || alias
+    const formatType = formats[alias] || defaultFormat
+    const decimals = decimalsConfig[alias]
+    const extra = buildFormatExtra(formatType, decimals, component.metric?.extra_config || {})
+    return {
+      label,
+      value: component.result.total,
+      formatted: formatValue(component.result.total, formatType, extra),
+    }
+  })
+})
+
+const derivedRows = computed(() => {
+  const rows = props.model?.widget?.options?.derivedRows
+  if (!rows?.length || !props.model?.components?.length) return []
+  const scope = props.model.components.reduce((acc, component) => {
+    acc[component.alias] = component.result.total
+    return acc
+  }, {})
+  return rows
+    .map(row => {
+      const value = evaluate(row.expression, scope)
+      if (value == null || Number.isNaN(value)) return null
+      const formatType = row.format || 'value'
+      const extra = buildFormatExtra(formatType, row.decimals, {})
+      return {
+        label: row.label,
+        value,
+        formatted: formatValue(value, formatType, extra),
+      }
+    })
+    .filter(Boolean)
+})
+
+function formatValue (value, formatType = 'value', extra = {}) {
   if (value == null || Number.isNaN(value)) return '—'
-  return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 }).format(value)
+  const decimals = typeof extra.decimals === 'number'
+    ? extra.decimals
+    : (formatType === 'currency' ? 2 : formatType === 'percentage' ? 1 : 0)
+  if (formatType === 'currency') {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: extra.currency || 'MXN',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value)
+  }
+  if (formatType === 'percentage') {
+    const pct = value * 100
+    return `${pct.toFixed(decimals)}%`
+  }
+  if (formatType === 'duration') {
+    const totalMinutes = Math.round(value)
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+  }
+  return new Intl.NumberFormat('es-MX', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: Math.max(decimals, 0),
+  }).format(value)
 }
 
-function formatBaseline (value) {
-  if (props.model?.summary?.baselineFormatted) return props.model.summary.baselineFormatted
-  return formatValue(value)
+function buildFormatExtra (formatType, decimals, extraConfig = {}) {
+  const extra = { ...extraConfig }
+  if (typeof decimals === 'number') {
+    extra.decimals = decimals
+  }
+  if (formatType === 'currency' && !extra.currency) {
+    extra.currency = 'MXN'
+  }
+  return extra
+}
+
+function evaluate (expression, scope) {
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('scope', `with(scope){ return ${expression} }`)
+    return fn(scope)
+  } catch (err) {
+    console.warn('[WidgetRenderer] Error al evaluar expresión derivada', err)
+    return null
+  }
 }
 </script>
