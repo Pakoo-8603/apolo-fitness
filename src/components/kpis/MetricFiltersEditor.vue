@@ -62,6 +62,8 @@ const emit = defineEmits(['update:modelValue'])
 
 let seq = 1
 const localFilters = reactive([])
+let lastEmitted = JSON.stringify(props.modelValue ?? [])
+let syncingFromProps = false
 
 function serializeValue (value) {
   if (value === null || value === undefined) return ''
@@ -87,6 +89,7 @@ function parseValue (input) {
 }
 
 function syncFromProps () {
+  syncingFromProps = true
   localFilters.splice(0, localFilters.length)
   for (const filter of props.modelValue) {
     localFilters.push({
@@ -97,12 +100,18 @@ function syncFromProps () {
       _valueInput: serializeValue(filter.value),
     })
   }
+  lastEmitted = JSON.stringify(props.modelValue ?? [])
+  nextTick(() => { syncingFromProps = false })
 }
 
-watch(() => props.modelValue, syncFromProps, { immediate: true })
+watch(() => props.modelValue, syncFromProps, { immediate: true, deep: true })
 
 function emitChange () {
+  if (syncingFromProps) return
   const payload = localFilters.map(({ _localKey, _valueInput, ...rest }) => ({ ...rest }))
+  const serialized = JSON.stringify(payload)
+  if (serialized === lastEmitted) return
+  lastEmitted = serialized
   emit('update:modelValue', payload)
 }
 

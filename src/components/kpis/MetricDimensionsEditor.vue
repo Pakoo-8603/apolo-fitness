@@ -49,8 +49,11 @@ const emit = defineEmits(['update:modelValue'])
 
 let seq = 1
 const localDimensions = reactive([])
+let lastEmitted = JSON.stringify(props.modelValue ?? [])
+let syncingFromProps = false
 
 function syncFromProps () {
+  syncingFromProps = true
   localDimensions.splice(0, localDimensions.length)
   for (const dimension of props.modelValue) {
     localDimensions.push({
@@ -61,12 +64,18 @@ function syncFromProps () {
       _localKey: `dimension-${seq++}`,
     })
   }
+  lastEmitted = JSON.stringify(props.modelValue ?? [])
+  nextTick(() => { syncingFromProps = false })
 }
 
-watch(() => props.modelValue, syncFromProps, { immediate: true })
+watch(() => props.modelValue, syncFromProps, { immediate: true, deep: true })
 
 function emitChange () {
+  if (syncingFromProps) return
   const payload = localDimensions.map(({ _localKey, ...rest }) => ({ ...rest }))
+  const serialized = JSON.stringify(payload)
+  if (serialized === lastEmitted) return
+  lastEmitted = serialized
   emit('update:modelValue', payload)
 }
 
