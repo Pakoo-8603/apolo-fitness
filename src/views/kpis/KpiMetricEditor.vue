@@ -273,7 +273,7 @@ const availableSources = computed(() => kpiStore.state.sources.filter(source => 
 const availableFields = computed(() => kpiStore.state.sourceFields.filter(field => Number(field.source_id) === Number(metricForm.source_id)))
 const numericFields = computed(() => availableFields.value.filter(field => field.field_type === 'numeric'))
 const dateFields = computed(() => availableFields.value.filter(field => field.field_type === 'date'))
-const ownedMetrics = computed(() => kpiStore.metricsForActiveEmpresa.value.filter(metric => metric.empresa_id == null || Number(metric.empresa_id) === Number(empresaId.value)))
+const ownedMetrics = computed(() => kpiStore.metricsForActiveEmpresa.filter(metric => metric.empresa_id == null || Number(metric.empresa_id) === Number(empresaId.value)))
 
 const aggregationWithoutField = computed(() => metricForm.aggregation === 'count')
 

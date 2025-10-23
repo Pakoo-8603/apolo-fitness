@@ -383,7 +383,7 @@ export function useKpiEngine () {
       }
     }
 
-    const source = kpiStore.sourcesById.value[metric.source_id]
+    const source = kpiStore.sourcesById[metric.source_id]
     const fields = sourceFieldsBySource.value[metric.source_id] || []
     const fieldMap = fields.reduce((acc, field) => ({ ...acc, [field.id]: field }), {})
     const fieldByName = fields.reduce((acc, field) => ({ ...acc, [field.name]: field }), {})
@@ -400,7 +400,7 @@ export function useKpiEngine () {
       })
     }
 
-    const metricFilters = (localFilters != null ? localFilters : (kpiStore.metricFiltersByMetric.value[metric.id] || []))
+    const metricFilters = (localFilters != null ? localFilters : (kpiStore.metricFiltersByMetric[metric.id] || []))
     const contextFilters = buildContextFilters(context, fields)
     const allFilters = [...metricFilters, ...widgetFilters, ...contextFilters]
     const recordsWithoutTime = applyFilterArray(records, allFilters, fieldMap, fieldByName)
@@ -432,13 +432,20 @@ export function useKpiEngine () {
       previousTotal = aggregateRecords(previousRecords, metric.aggregation, valueField)
     }
 
-    const dimensions = (localDimensions != null ? localDimensions : (kpiStore.metricDimensionsByMetric.value[metric.id] || []))
+    const dimensions = (localDimensions != null ? localDimensions : (kpiStore.metricDimensionsByMetric[metric.id] || []))
     const primaryDimension = dimensions.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]
     let breakdown = []
     let series = []
     if (primaryDimension) {
       const dimensionField = fieldMap[primaryDimension.field_id]
-      const groups = bucketByGranularity(filteredRecords, dimensionField, primaryDimension.granularity, valueField, metric.aggregation, primaryDimension.limit)
+      const groups = bucketByGranularity(
+        filteredRecords,
+        dimensionField,
+        primaryDimension.granularity,
+        valueField,
+        metric.aggregation,
+        primaryDimension.limit,
+      )
       breakdown = groups
       series = groups
     } else if (dateField) {
@@ -474,7 +481,7 @@ export function useKpiEngine () {
       const result = resolveMetric(metric, { widget, widgetFilters: metricFilters, context })
       let baseline = null
       if (definition.baseline_metric_id) {
-        const baselineMetric = kpiStore.metricsById.value[definition.baseline_metric_id]
+        const baselineMetric = kpiStore.metricsById[definition.baseline_metric_id]
         baseline = resolveMetric(baselineMetric, { widget: null, widgetFilters: metricFilters, context })
       }
       const formattedValue = formatValue(result.total, definition.format_type, definition.extra_config)
@@ -502,7 +509,7 @@ export function useKpiEngine () {
 
     const componentSummaries = []
     for (const component of components) {
-      const targetMetric = kpiStore.metricsById.value[component.metric_id]
+      const targetMetric = kpiStore.metricsById[component.metric_id]
       const componentFilters = filters.filter(filter => filter.target_alias === component.alias || (!filter.target_alias && !component.alias))
       const metricResult = resolveMetric(targetMetric, { widget, widgetFilters: componentFilters, context })
       componentSummaries.push({ alias: component.alias, metric: targetMetric, result: metricResult })
@@ -512,7 +519,7 @@ export function useKpiEngine () {
       scope[summary.alias] = summary.result.total
     }
     const formulaValue = evaluateFormula(definition.expression, scope)
-    const baselineMetric = definition.baseline_metric_id ? kpiStore.metricsById.value[definition.baseline_metric_id] : null
+    const baselineMetric = definition.baseline_metric_id ? kpiStore.metricsById[definition.baseline_metric_id] : null
     const baselineResult = baselineMetric ? resolveMetric(baselineMetric, { widget, widgetFilters: [], context }) : null
     const formattedValue = formatValue(formulaValue, definition.format_type, definition.extra_config)
     const breakdown = componentSummaries[0]?.result.breakdown || []

@@ -168,9 +168,9 @@ let widgetSeq = 1
 
 const dashboardOptions = computed(() => dashboardsForActiveEmpresa.value)
 
-const definitionsMap = computed(() => kpiStore.definitionsById.value)
-const metricsMap = computed(() => kpiStore.metricsById.value)
-const definitionComponentsMap = computed(() => kpiStore.definitionComponents.value)
+const definitionsMap = computed(() => kpiStore.definitionsById)
+const metricsMap = computed(() => kpiStore.metricsById)
+const definitionComponentsMap = computed(() => kpiStore.definitionComponents)
 
 const availableDefinitions = computed(() => definitionsForActiveEmpresa.value.filter(definition => definition.empresa_id == null || Number(definition.empresa_id) === Number(editingDashboard.empresa_id)))
 
