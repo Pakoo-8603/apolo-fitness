@@ -37,6 +37,10 @@ const Configuraciones = () => import('@/views/config/Configuraciones.vue')
 const UiConfigurator = () => import('@/views/config/UiConfigurator.vue')
 const ReportesAuditoria = () => import('@/views/reportes/ReportesAuditoria.vue')
 const Perfil          = () => import('@/views/cuenta/Perfil.vue')
+const KpisLayout = () => import('@/views/kpis/KpisLayout.vue')
+const KpiDashboardView = () => import('@/views/kpis/KpiDashboardView.vue')
+const KpiMetricEditor = () => import('@/views/kpis/KpiMetricEditor.vue')
+const KpiDashboardEditor = () => import('@/views/kpis/KpiDashboardEditor.vue')
 
 const routes = [
   // Públicas
@@ -80,6 +84,16 @@ const routes = [
       // Cuenta
       { path: 'perfil', name: 'Perfil', component: Perfil },
       { path: 'reportes', name: 'Reportes', component: ReportesAuditoria },
+      {
+        path: 'kpis',
+        component: KpisLayout,
+        children: [
+          { path: 'dashboard', name: 'KpiDashboard', component: KpiDashboardView, meta: { perms: ['kpis:read'] } },
+          { path: 'metricas/:id?', name: 'KpiMetricEditor', component: KpiMetricEditor, props: true, meta: { perms: ['kpis:manage'] } },
+          { path: 'dashboards/:id/editar', name: 'KpiDashboardEditor', component: KpiDashboardEditor, props: true, meta: { perms: ['kpis:manage'] } },
+          { path: '', redirect: { name: 'KpiDashboard' } },
+        ],
+      },
 
       // default child
       { path: '', redirect: { name: 'Dashboard' } },
@@ -94,6 +108,7 @@ const routes = [
   { path: '/usuarios',       redirect: { name: 'UsuariosEmpresa' } },
   { path: '/config',         redirect: { name: 'Configuraciones' } },
   { path: '/perfil',         redirect: { name: 'Perfil' } },
+  { path: '/kpis',           redirect: { name: 'KpiDashboard' } },
 
   // Raíz -> dashboard (guard decidirá login si no hay sesión)
   { path: '/', redirect: '/dashboard' },
