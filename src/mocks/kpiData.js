@@ -9,29 +9,34 @@
 
 export const KPI_STORAGE_KEY = 'apolo-fitness:kpis:v1'
 
-const seedTimestamp = new Date('2024-10-15T00:00:00Z')
+const seedTimestamp = new Date('2024-10-15T10:00:00Z')
 
 const ventasRecords = [
-  { id: 1, fecha: '2024-09-26', total: 14500, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo' },
-  { id: 2, fecha: '2024-09-27', total: 9300, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'recurrente' },
-  { id: 3, fecha: '2024-09-28', total: 17800, sucursal: 'Norte', metodo_pago: 'transferencia', cliente_tipo: 'nuevo' },
-  { id: 4, fecha: '2024-09-29', total: 11200, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 5, fecha: '2024-09-30', total: 15400, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo' },
-  { id: 6, fecha: '2024-10-01', total: 20400, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 7, fecha: '2024-10-02', total: 12600, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo' },
-  { id: 8, fecha: '2024-10-03', total: 9600, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'nuevo' },
-  { id: 9, fecha: '2024-10-04', total: 18800, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 10, fecha: '2024-10-05', total: 16300, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 11, fecha: '2024-10-06', total: 10100, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo' },
-  { id: 12, fecha: '2024-10-07', total: 22100, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 13, fecha: '2024-10-08', total: 17200, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'recurrente' },
-  { id: 14, fecha: '2024-10-09', total: 9500, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo' },
-  { id: 15, fecha: '2024-10-10', total: 18400, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo' },
-  { id: 16, fecha: '2024-10-11', total: 13700, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 17, fecha: '2024-10-12', total: 9900, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo' },
-  { id: 18, fecha: '2024-10-13', total: 20900, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
-  { id: 19, fecha: '2024-10-14', total: 11800, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'nuevo' },
-  { id: 20, fecha: '2024-10-15', total: 19500, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente' },
+  { id: 1, fecha: '2024-09-26', total: 14500, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo', procesado: true },
+  { id: 2, fecha: '2024-09-27', total: 9300, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'recurrente', procesado: true },
+  { id: 3, fecha: '2024-09-28', total: 17800, sucursal: 'Norte', metodo_pago: 'transferencia', cliente_tipo: 'nuevo', procesado: true },
+  { id: 4, fecha: '2024-09-29', total: 11200, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 5, fecha: '2024-09-30', total: 15400, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo', procesado: true },
+  { id: 6, fecha: '2024-10-01', total: 20400, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 7, fecha: '2024-10-02', total: 12600, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo', procesado: true },
+  { id: 8, fecha: '2024-10-03', total: 9600, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'nuevo', procesado: true },
+  { id: 9, fecha: '2024-10-04', total: 18800, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 10, fecha: '2024-10-05', total: 16300, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 11, fecha: '2024-10-06', total: 10100, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo', procesado: true },
+  { id: 12, fecha: '2024-10-07', total: 22100, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 13, fecha: '2024-10-08', total: 17200, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'recurrente', procesado: true },
+  { id: 14, fecha: '2024-10-09', total: 9500, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo', procesado: true },
+  { id: 15, fecha: '2024-10-10', total: 18400, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo', procesado: true },
+  { id: 16, fecha: '2024-10-11', total: 13700, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 17, fecha: '2024-10-12', total: 9900, sucursal: 'Matriz', metodo_pago: 'efectivo', cliente_tipo: 'nuevo', procesado: true },
+  { id: 18, fecha: '2024-10-13', total: 20900, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 19, fecha: '2024-10-14', total: 11800, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'nuevo', procesado: true },
+  { id: 20, fecha: '2024-10-15', total: 19500, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 21, fecha: '2024-10-16', total: 17650, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
+  { id: 22, fecha: '2024-10-17', total: 14200, sucursal: 'Norte', metodo_pago: 'efectivo', cliente_tipo: 'nuevo', procesado: true },
+  { id: 23, fecha: '2024-10-18', total: 20550, sucursal: 'Matriz', metodo_pago: 'transferencia', cliente_tipo: 'recurrente', procesado: true },
+  { id: 24, fecha: '2024-10-19', total: 16780, sucursal: 'Norte', metodo_pago: 'tarjeta', cliente_tipo: 'nuevo', procesado: true },
+  { id: 25, fecha: '2024-10-20', total: 15840, sucursal: 'Matriz', metodo_pago: 'tarjeta', cliente_tipo: 'recurrente', procesado: true },
 ]
 
 const accesosRecords = [
@@ -51,6 +56,22 @@ const accesosRecords = [
   { id: 14, fecha: '2024-10-05T18:11:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
   { id: 15, fecha: '2024-10-06T09:40:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
   { id: 16, fecha: '2024-10-06T20:15:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
+  { id: 17, fecha: '2024-10-14T07:10:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
+  { id: 18, fecha: '2024-10-14T08:25:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
+  { id: 19, fecha: '2024-10-14T18:45:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
+  { id: 20, fecha: '2024-10-15T06:50:00', sucursal: 'Norte', tipo_acceso: 'entrada' },
+  { id: 21, fecha: '2024-10-15T07:05:00', sucursal: 'Norte', tipo_acceso: 'entrada' },
+  { id: 22, fecha: '2024-10-15T19:05:00', sucursal: 'Norte', tipo_acceso: 'salida' },
+  { id: 23, fecha: '2024-10-16T07:20:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
+  { id: 24, fecha: '2024-10-16T19:18:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
+  { id: 25, fecha: '2024-10-17T07:08:00', sucursal: 'Norte', tipo_acceso: 'entrada' },
+  { id: 26, fecha: '2024-10-17T18:55:00', sucursal: 'Norte', tipo_acceso: 'salida' },
+  { id: 27, fecha: '2024-10-18T06:58:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
+  { id: 28, fecha: '2024-10-18T20:02:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
+  { id: 29, fecha: '2024-10-19T08:12:00', sucursal: 'Norte', tipo_acceso: 'entrada' },
+  { id: 30, fecha: '2024-10-19T12:47:00', sucursal: 'Norte', tipo_acceso: 'salida' },
+  { id: 31, fecha: '2024-10-20T09:22:00', sucursal: 'Matriz', tipo_acceso: 'entrada' },
+  { id: 32, fecha: '2024-10-20T13:50:00', sucursal: 'Matriz', tipo_acceso: 'salida' },
 ]
 
 const altasPlanRecords = [
@@ -59,6 +80,9 @@ const altasPlanRecords = [
   { id: 3, fecha_alta: '2024-10-04', importe: 9600, plan_tipo: 'mensual', sucursal: 'Norte' },
   { id: 4, fecha_alta: '2024-10-08', importe: 7800, plan_tipo: 'mensual', sucursal: 'Matriz' },
   { id: 5, fecha_alta: '2024-10-12', importe: 10400, plan_tipo: 'anual', sucursal: 'Norte' },
+  { id: 6, fecha_alta: '2024-10-16', importe: 6400, plan_tipo: 'mensual', sucursal: 'Matriz' },
+  { id: 7, fecha_alta: '2024-10-18', importe: 11200, plan_tipo: 'mensual', sucursal: 'Norte' },
+  { id: 8, fecha_alta: '2024-10-19', importe: 7200, plan_tipo: 'semanal', sucursal: 'Matriz' },
 ]
 
 export function buildSeedData () {
