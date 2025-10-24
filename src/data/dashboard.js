@@ -2961,9 +2961,15 @@ export function buildDashboardSnapshot({ empresaId, sucursalId } = {}) {
   const metadata = base.metadata || {}
   const allEmpresas = Array.isArray(metadata.empresas) ? metadata.empresas : []
   const allSucursales = Array.isArray(metadata.sucursales) ? metadata.sucursales : []
-  const defaultEmpresaId = metadata.defaultEmpresaId ?? allEmpresas[0]?.id ?? null
-  const targetEmpresaId = empresaId ?? defaultEmpresaId
-  const empresa = allEmpresas.find((item) => item.id === targetEmpresaId)
+  const defaultEmpresaId =
+    metadata.defaultEmpresaId != null
+      ? Number(metadata.defaultEmpresaId)
+      : allEmpresas[0]?.id != null
+        ? Number(allEmpresas[0].id)
+        : null
+  const requestedEmpresaId = empresaId != null ? Number(empresaId) : null
+  const targetEmpresaId = Number.isFinite(requestedEmpresaId) ? requestedEmpresaId : defaultEmpresaId
+  const empresa = allEmpresas.find((item) => Number(item.id) === targetEmpresaId)
 
   if (!empresa) {
     return {
