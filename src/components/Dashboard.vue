@@ -9,10 +9,21 @@
               KPIs dinámicos para monitorear tu operación.
             </p>
           </div>
+
+          <button
+            class="edit-toggle"
+            :class="{ 'is-active': isEditing }"
+            :style="editButtonStyle"
+            type="button"
+            @click="toggleEditing"
+          >
+            <i class="fa-solid" :class="isEditing ? 'fa-lock-open' : 'fa-grip'" />
+            <span>{{ isEditing ? 'Bloquear layout' : 'Editar layout' }}</span>
+          </button>
         </header>
 
         <section class="gridstack-wrapper">
-          <div ref="gridRef" class="grid-stack"></div>
+          <div ref="gridRef" class="grid-stack" :class="{ 'is-editing': isEditing }"></div>
         </section>
 
         <div class="text-right">
@@ -177,6 +188,7 @@ const ROW_HEIGHT = 108
 const GRID_MARGIN = 22
 const MAX_COL_SPAN = 3
 const MAX_ROW_SPAN = 6
+const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v1'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -250,6 +262,7 @@ const fabSecondaryStyle = computed(() => ({
 
 const gridRef = ref(null)
 const gridInstance = ref(null)
+const isEditing = ref(false)
 let previousRenderCallback = null
 const widgetApps = new Map()
 
@@ -259,7 +272,7 @@ const loading = reactive({ dashboard: false, buscar: false, resumen: false })
 const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
 const filters = reactive(cloneDeep(defaultFilters))
 const filterOptionsState = reactive({ ...initialFilterOptions })
-const layoutState = ref(normalizeLayout(defaultLayout))
+const layoutState = ref(normalizeLayout(loadStoredLayout() || defaultLayout))
 
 const loadingDashboard = computed(() => loading.dashboard)
 
@@ -322,6 +335,12 @@ const sharedDashboardState = {
   updateFilter: updateModuleFilter,
 }
 
+const editButtonStyle = computed(() => ({
+  borderColor: borderColor.value,
+  color: theme.value.cardText,
+  background: isEditing.value ? chipBg.value : theme.value.cardBg,
+}))
+
 function renderModuleInto(el, moduleId) {
   detachWidgetApp(moduleId)
   el.classList.add('kpi-card-host')
@@ -380,12 +399,13 @@ function initGrid() {
       margin: GRID_MARGIN,
       cellHeight: ROW_HEIGHT,
       float: false,
-      staticGrid: true,
+      staticGrid: !isEditing.value,
       disableOneColumnMode: false,
     },
     gridRef.value,
   )
   gridInstance.value = grid
+  attachGridEvents()
   renderGrid()
 }
 
@@ -393,6 +413,7 @@ function destroyGrid() {
   const grid = gridInstance.value
   if (!grid) return
   detachAllWidgetApps()
+  detachGridEvents()
   grid.destroy(false)
   gridInstance.value = null
 }
@@ -400,17 +421,19 @@ function destroyGrid() {
 function renderGrid() {
   const grid = gridInstance.value
   if (!grid) return
-  const nodes = layoutState.value.map((item) => ({
+  const visibleItems = layoutState.value.filter((item) => item.visible !== false)
+  const nodes = visibleItems.map((item) => ({
     id: item.id,
     x: item.x,
     y: item.y,
     w: item.w,
     h: item.h,
-    locked: true,
-    noMove: true,
-    noResize: true,
   }))
+  ignoreGridEvents = true
+  detachAllWidgetApps()
   grid.load(nodes)
+  ignoreGridEvents = false
+  applyGridMode()
 }
 
 function normalizeLayout(entries) {
@@ -423,7 +446,12 @@ function normalizeLayout(entries) {
     const h = clamp(baseRow, 1, MAX_ROW_SPAN)
     const orderValue = Number(saved.order)
     const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
-    return { id: def.id, w, h, order }
+    const savedX = Number(saved.x)
+    const savedY = Number(saved.y)
+    const x = Number.isFinite(savedX) ? clamp(savedX, 0, GRID_COLUMNS - w) : undefined
+    const y = Number.isFinite(savedY) ? Math.max(0, savedY) : undefined
+    const visible = saved.visible === false ? false : true
+    return { id: def.id, w, h, order, x, y, visible }
   })
   return placeItems(prepared)
 }
@@ -437,6 +465,10 @@ function placeItems(items) {
   const occupied = []
   const result = []
   for (const item of ordered) {
+    if (item.visible === false) {
+      result.push({ ...item, x: item.x ?? 0, y: item.y ?? 0, visible: false })
+      continue
+    }
     const w = clamp(item.w, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
     const h = clamp(item.h, 1, MAX_ROW_SPAN)
     let x = clamp(item.x ?? 0, 0, GRID_COLUMNS - w)
@@ -447,7 +479,7 @@ function placeItems(items) {
       y = spot.y
     }
     occupied.push({ x, y, w, h })
-    result.push({ id: item.id, w, h, x, y, order: item.order })
+    result.push({ id: item.id, w, h, x, y, order: item.order, visible: true })
   }
   return result
 }
@@ -863,6 +895,7 @@ onMounted(async () => {
   installRenderCallback()
   await nextTick()
   initGrid()
+  applyGridMode()
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
   await loadDashboard()
@@ -960,6 +993,141 @@ function onClienteCreado(cliente) {
   if (!cliente?.id) return
   openResumen(cliente.id)
 }
+
+let ignoreGridEvents = false
+let updatingFromGrid = false
+
+function toggleEditing() {
+  isEditing.value = !isEditing.value
+}
+
+function applyGridMode() {
+  const grid = gridInstance.value
+  if (!grid) return
+  const editing = isEditing.value
+  grid.setStatic(!editing)
+  grid.enableMove(editing)
+  grid.enableResize(editing)
+  grid.getGridItems().forEach((el) => {
+    grid.movable(el, editing)
+    grid.resizable(el, editing)
+  })
+}
+
+function loadStoredLayout() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    return parsed
+  } catch (err) {
+    console.warn('No se pudo cargar el layout del dashboard', err)
+    return null
+  }
+}
+
+function persistLayout(value) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(value))
+  } catch (err) {
+    console.warn('No se pudo guardar el layout del dashboard', err)
+  }
+}
+
+function attachGridEvents() {
+  const grid = gridInstance.value
+  if (!grid) return
+  grid.on('change', onGridChange)
+  grid.on('dragstop', onGridChange)
+  grid.on('resizestop', onGridChange)
+  grid.on('removed', onGridRemoved)
+}
+
+function detachGridEvents() {
+  const grid = gridInstance.value
+  if (!grid) return
+  grid.off('change', onGridChange)
+  grid.off('dragstop', onGridChange)
+  grid.off('resizestop', onGridChange)
+  grid.off('removed', onGridRemoved)
+}
+
+function onGridRemoved(event, items) {
+  if (!Array.isArray(items)) return
+  for (const item of items) {
+    const id = item?.id ?? item?.el?.dataset?.gsId
+    if (id != null) {
+      detachWidgetApp(id)
+    }
+  }
+}
+
+function onGridChange() {
+  if (ignoreGridEvents) return
+  const grid = gridInstance.value
+  if (!grid) return
+  const nodes = grid.engine?.nodes || []
+  const sorted = nodes
+    .filter((node) => {
+      const id = node?.id ?? node?.el?.dataset?.gsId
+      return id != null && moduleMap.has(String(id))
+    })
+    .slice()
+    .sort((a, b) => (a.y - b.y === 0 ? a.x - b.x : a.y - b.y))
+  const updates = sorted.map((node, index) => {
+    const id = String(node.id ?? node.el?.dataset?.gsId)
+    return {
+      id,
+      x: node.x,
+      y: node.y,
+      w: node.w,
+      h: node.h,
+      order: index + 1,
+      visible: true,
+    }
+  })
+  updatingFromGrid = true
+  layoutState.value = mergeLayout(layoutState.value, updates)
+  updatingFromGrid = false
+  persistLayout(layoutState.value)
+}
+
+function mergeLayout(current, updates) {
+  const updateMap = new Map(updates.map((item) => [String(item.id), item]))
+  const merged = current.map((entry) => {
+    const update = updateMap.get(String(entry.id))
+    if (!update) return { ...entry }
+    updateMap.delete(String(entry.id))
+    return { ...entry, ...update }
+  })
+  for (const extra of updateMap.values()) {
+    merged.push({ ...extra })
+  }
+  return merged
+}
+
+watch(
+  isEditing,
+  () => {
+    applyGridMode()
+  },
+  { flush: 'post' },
+)
+
+watch(
+  layoutState,
+  (value) => {
+    if (updatingFromGrid) return
+    persistLayout(value)
+    if (gridInstance.value) {
+      nextTick(() => renderGrid())
+    }
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>
@@ -980,12 +1148,46 @@ function onClienteCreado(cliente) {
   font-size: 0.95rem;
 }
 
+.edit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 9999px;
+  padding: 0.45rem 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.edit-toggle span {
+  white-space: nowrap;
+}
+
+.edit-toggle:is(:hover, :focus-visible) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+}
+
+.edit-toggle.is-active {
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
+}
+
 .gridstack-wrapper {
   position: relative;
 }
 
 .grid-stack {
   min-height: 360px;
+}
+
+.grid-stack.is-editing .grid-stack-item {
+  cursor: move;
+}
+
+.grid-stack.is-editing .grid-stack-item .ui-resizable-handle {
+  opacity: 1;
 }
 
 .grid-stack-item-content {
