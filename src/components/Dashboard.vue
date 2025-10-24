@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen flex flex-col">
     <main class="flex-1">
-      <div class="mx-auto w-full max-w-[1300px] px-5 py-6 space-y-6">
+      <div class="mx-auto w-full max-w-[1200px] px-5 py-6 space-y-6">
         <header class="dashboard-head">
           <div>
             <h1 class="dashboard-title" :style="{ color: theme.text }">Panel principal</h1>
@@ -54,8 +54,127 @@
           </div>
         </transition>
 
-        <div class="text-right">
-          <RouterLink :to="{ name: 'PlanesLista' }" class="link-theme">Ver todos los planes</RouterLink>
+        <!-- Gráficas + Clases -->
+        <section class="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <!-- Columna izquierda -->
+          <div class="lg:col-span-2 space-y-5">
+            <!-- Ingresos / Plan -->
+            <div class="card overflow-hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2">
+                <!-- Línea -->
+                <div class="p-4 sm:p-5">
+                  <VChart :option="lineOption" autoresize class="h-56" />
+                </div>
+                <!-- Dona -->
+                <div class="p-4 sm:p-5">
+                  <VChart :option="pieOption" autoresize class="h-56" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Próximos cobros / Equipos -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <!-- Próximos cobros -->
+              <div class="card">
+                <div class="card-head">
+                  <h3 class="card-title" :style="{ color: theme.text }">Próximos cobros</h3>
+                  <button class="icon-btn" @click="loadCobros" title="Actualizar" :style="iconBtnStyle">⟳</button>
+                </div>
+
+                <div class="p-4 sm:p-5 space-y-4 max-h-64 overflow-auto" v-if="!loading.cobros">
+                  <div v-for="c in proximosCobros" :key="c.id" class="flex items-center justify-between">
+                    <div class="min-w-0">
+                      <div class="font-medium truncate max-w-[260px]" :style="{ color: theme.text }">{{ c.nombre }}</div>
+                      <div class="text-xs truncate" :style="{ color: subtext }">{{ fmtFecha(c.fecha) }}<span v-if="c.tipo"> ({{ c.tipo }})</span></div>
+                    </div>
+                    <button class="btn-ghost">Cobrar</button>
+                  </div>
+                  <div v-if="!proximosCobros.length" class="text-[13px]" :style="{ color: subtext }">Sin cobros próximos</div>
+                </div>
+                <div v-else class="p-4 text-sm" :style="{ color: subtext }">Cargando…</div>
+              </div>
+
+              <!-- Equipos (hardcode) con filtros -->
+              <div class="card">
+                <div class="card-head">
+                  <h3 class="card-title" :style="{ color: theme.text }">Equipos</h3>
+                  <div class="flex gap-2">
+                    <button
+                      v-for="f in filtrosEquipos"
+                      :key="f.key"
+                      @click="toggleFiltroEquipo(f.key)"
+                      class="text-[11px] px-2 py-1 rounded-md text-white"
+                      :style="{ background: eqFilter === f.key ? f.color : '#a3a3a3' }"
+                    >
+                      {{ f.text }}
+                    </button>
+                  </div>
+                </div>
+                <div class="p-4 sm:p-5 space-y-3">
+                  <div v-for="e in equiposFiltrados" :key="e.id" class="flex items-center justify-between">
+                    <div>
+                      <div class="font-medium" :style="{ color: theme.text }">{{ e.nombre }}</div>
+                      <div class="text-xs" :style="{ color: subtext }">{{ e.estadoTexto }}</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span
+                        v-for="b in e.badges"
+                        :key="b.text"
+                        class="text-[11px] px-2 py-1 rounded-md text-white"
+                        :style="{ background: b.color }"
+                      >
+                        {{ b.text }}
+                      </span>
+                      <button class="btn-ghost">Ver</button>
+                    </div>
+                  </div>
+                  <div v-if="!equiposFiltrados.length" class="text-[13px]" :style="{ color: subtext }">Sin equipos</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Columna derecha: Clases (disciplinas) -->
+          <div class="card">
+            <div class="card-head">
+              <h3 class="card-title" :style="{ color: theme.text }">Clases</h3>
+              <button class="icon-btn" @click="loadClases" title="Recargar" :style="iconBtnStyle">≡</button>
+            </div>
+            <div class="p-4 sm:p-5 space-y-4" v-if="!loading.clases">
+              <div
+                v-for="clase in clases"
+                :key="clase.id"
+                class="rounded-2xl border p-4"
+                :style="{ background: theme.cardBg, color: theme.cardText, borderColor }"
+              >
+                <div class="text-[12px] mb-1" :style="{ color: subtext }">
+                  {{ clase.hora_inicio }}–{{ clase.hora_fin }} — {{ clase.sede || 'Gimnasio' }}
+                </div>
+                <div class="font-semibold mb-1" :style="{ color: theme.text }">{{ clase.nombre }}</div>
+                <div class="text-[12px] mb-2" :style="{ color: subtext }">{{ clase.instructor || '—' }}</div>
+
+                <div v-if="clase.cupo && clase.inscritos != null" class="flex items-center justify-between text-[12px] mb-1">
+                  <span :style="{ color: clase.delta>0 ? '#059669' : (clase.delta<0 ? '#e11d48' : subtext) }">
+                    {{ clase.delta>0 ? ('+'+clase.delta) : (clase.delta<0 ? clase.delta : '0') }}
+                  </span>
+                  <span :style="{ color: subtext }">({{ formatMiles(clase.inscritos) }}/{{ formatMiles(clase.cupo) }})</span>
+                </div>
+
+                <div v-if="clase.cupo && clase.inscritos != null" class="h-2 rounded-full overflow-hidden" :style="{ background: trackBg }">
+                  <div
+                    class="h-full rounded-full"
+                    :style="{ width: Math.min(100, Math.round((clase.inscritos / Math.max(1, clase.cupo)) * 100)) + '%', background: clase.colorBarra }"
+                  />
+                </div>
+              </div>
+              <div v-if="!clases.length" class="text-[13px]" :style="{ color: subtext }">No hay clases para mostrar.</div>
+            </div>
+            <div v-else class="p-4 text-sm" :style="{ color: subtext }">Cargando…</div>
+          </div>
+        </section>
+
+        <div class="mt-5 text-right">
+          <RouterLink :to="{ name: 'ClientesLista' }" class="link-theme">Ver todos los clientes</RouterLink>
         </div>
       </div>
     </main>
@@ -198,6 +317,11 @@ import { useUiConfigStore } from '@/stores/uiConfig'
 import ClienteCrearModal from '@/views/clientes/modals/ClienteCrearModal.vue'
 import ClientSummaryCard from '@/components/ClientSummaryCard.vue'
 import KpiModuleCard from '@/components/dashboard/KpiModuleCard.vue'
+import { use } from 'echarts/core'
+import VChart from 'vue-echarts'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart, PieChart } from 'echarts/charts'
+import { GridComponent as EGridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import api from '@/api/services'
 import http from '@/api/http'
 import { fetchDashboardSnapshot, dashboardApiContract } from '@/api/dashboard'
@@ -210,6 +334,8 @@ import {
   formatDateLabel,
   formatMonthLabel,
 } from '@/data/dashboard'
+
+use([CanvasRenderer, LineChart, PieChart, EGridComponent, TooltipComponent, LegendComponent, TitleComponent])
 
 const GRID_COLUMNS = 24
 const ROW_HEIGHT = 10
@@ -295,7 +421,7 @@ let previousRenderCallback = null
 const widgetApps = new Map()
 
 const dashboardData = ref(null)
-const loading = reactive({ dashboard: false, buscar: false, resumen: false })
+const loading = reactive({ dashboard: false, buscar: false, resumen: false, ingresos: true, cobros: false, clases: true })
 
 const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
 const filters = reactive(cloneDeep(defaultFilters))
@@ -316,6 +442,281 @@ const moduleOutputs = computed(() => {
   }
   return result
 })
+
+const proximosCobros = ref([])
+const clases = ref([])
+
+const filtrosEquipos = [
+  { key: 'piso', text: 'En piso', color: '#10b981' },
+  { key: 'manto', text: 'Mantenimiento', color: '#f59e0b' },
+  { key: 'da', text: 'Dañado', color: '#ef4444' },
+]
+const eqFilter = ref('piso')
+const equipos = ref([
+  {
+    id: 1,
+    nombre: 'Cinta de correr (#0012)',
+    estadoTexto: 'En mantenimiento',
+    tags: ['manto', 'piso'],
+    badges: [
+      { text: 'En piso', color: '#10b981' },
+      { text: 'Mantenimiento', color: '#f59e0b' },
+    ],
+  },
+  {
+    id: 2,
+    nombre: 'Bicicleta estática (#0007)',
+    estadoTexto: 'Dañado',
+    tags: ['da'],
+    badges: [{ text: 'Dañado', color: '#ef4444' }],
+  },
+  {
+    id: 3,
+    nombre: 'Máquina de remo (#0102)',
+    estadoTexto: 'En piso',
+    tags: ['piso'],
+    badges: [{ text: 'En piso', color: '#10b981' }],
+  },
+  {
+    id: 4,
+    nombre: 'Prensa de piernas (#0110)',
+    estadoTexto: 'En piso',
+    tags: ['piso'],
+    badges: [{ text: 'En piso', color: '#10b981' }],
+  },
+])
+
+const equiposFiltrados = computed(() => equipos.value.filter((equipo) => equipo.tags.includes(eqFilter.value)))
+
+function toggleFiltroEquipo(key) {
+  eqFilter.value = key
+}
+
+const ingresosFechas = ref([])
+const ingresosSerie = ref([])
+const planesDona = ref([])
+
+const trackBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.12)' : '#eef2f7'))
+
+const lineOption = computed(() => ({
+  color: [theme.value.primary],
+  title: {
+    text: 'Ingresos – Últimos 30 días',
+    left: 'left',
+    top: 6,
+    textStyle: { fontSize: 14, fontWeight: 600, color: theme.value.cardText },
+  },
+  grid: { left: 28, right: 12, top: 38, bottom: 22 },
+  tooltip: { trigger: 'axis', valueFormatter: (value) => money(value) },
+  xAxis: {
+    type: 'category',
+    data: ingresosFechas.value.map((date) =>
+      new Date(date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }),
+    ),
+    boundaryGap: false,
+    axisLabel: { fontSize: 11, color: subtext.value },
+    axisLine: { lineStyle: { color: borderColor.value } },
+    axisTick: { show: false },
+  },
+  yAxis: {
+    type: 'value',
+    axisLabel: {
+      formatter: (value) => formatMiles(value),
+      fontSize: 11,
+      color: subtext.value,
+    },
+    splitLine: { lineStyle: { color: borderColor.value } },
+  },
+  series: [
+    {
+      type: 'line',
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { width: 2, color: theme.value.primary },
+      areaStyle: {
+        opacity: 0.35,
+        color: {
+          type: 'linear',
+          x: 0,
+          y: 0,
+          x2: 0,
+          y2: 1,
+          colorStops: [
+            { offset: 0, color: theme.value.primary },
+            { offset: 1, color: theme.value.cardBg },
+          ],
+        },
+      },
+      data: ingresosSerie.value,
+    },
+  ],
+}))
+
+const pieOption = computed(() => ({
+  color: [theme.value.primary, '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#f97316'],
+  title: {
+    text: 'Plan',
+    left: 'center',
+    top: 6,
+    textStyle: { fontSize: 14, fontWeight: 600, color: theme.value.cardText },
+  },
+  tooltip: { trigger: 'item', valueFormatter: (value) => formatMiles(value) },
+  legend: {
+    top: 6,
+    right: 10,
+    orient: 'horizontal',
+    itemWidth: 10,
+    itemHeight: 10,
+    textStyle: { fontSize: 12, color: subtext.value },
+  },
+  series: [
+    {
+      name: 'Plan',
+      type: 'pie',
+      radius: ['55%', '80%'],
+      center: ['50%', '58%'],
+      label: { show: false },
+      emphasis: {
+        label: {
+          show: true,
+          fontSize: 14,
+          formatter: '{b}: {d}%',
+          color: theme.value.cardText,
+        },
+      },
+      data: planesDona.value,
+    },
+  ],
+}))
+
+async function loadIngresos() {
+  loading.ingresos = true
+  try {
+    const empresa = ws.empresaId
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const inicio = new Date(hoy)
+    inicio.setDate(inicio.getDate() - 29)
+    const fin = new Date(hoy)
+    fin.setDate(fin.getDate() + 1)
+
+    const { data } = await api.ventas.ventas.list({
+      empresa,
+      fecha_after: inicio.toISOString(),
+      fecha_before: fin.toISOString(),
+      page_size: 1000,
+      ordering: 'fecha',
+    })
+    const rows = data?.results || data || []
+    const map = new Map()
+    for (const venta of rows) {
+      const key = (venta.fecha || '').slice(0, 10)
+      map.set(key, (map.get(key) || 0) + Number(venta.total ?? venta.importe ?? 0))
+    }
+
+    const fechas = []
+    const valores = []
+    for (let i = 0; i < 30; i += 1) {
+      const fecha = new Date(inicio)
+      fecha.setDate(inicio.getDate() + i)
+      const key = fecha.toISOString().slice(0, 10)
+      fechas.push(key)
+      valores.push(Number(map.get(key) || 0))
+    }
+    ingresosFechas.value = fechas
+    ingresosSerie.value = valores
+
+    const { data: altasData } = await api.altasPlan.list({
+      fecha_after: inicio.toISOString(),
+      fecha_before: fin.toISOString(),
+      page_size: 1000,
+    })
+    const altas = altasData?.results || altasData || []
+    const cuenta = new Map()
+    for (const alta of altas) {
+      const nombre = alta.plan_nombre || `Plan ${alta.plan}`
+      cuenta.set(nombre, (cuenta.get(nombre) || 0) + 1)
+    }
+    planesDona.value = Array.from(cuenta.entries()).map(([name, value]) => ({ name, value }))
+  } finally {
+    loading.ingresos = false
+  }
+}
+
+async function loadCobros() {
+  loading.cobros = true
+  try {
+    const { data } = await api.altasPlan.list({ ordering: 'fecha_limite_pago', page_size: 50 })
+    const arr = data?.results || data || []
+    const items = arr
+      .filter((item) => !!item.fecha_limite_pago)
+      .map((item) => ({
+        id: item.id,
+        clienteId: item.cliente,
+        nombre: item.cliente_nombre || null,
+        fecha: item.fecha_limite_pago,
+        tipo: item.renovacion ? 'Renovación' : 'Prepago',
+      }))
+
+    for (const cobro of items) {
+      if (!cobro.nombre && cobro.clienteId) {
+        try {
+          const { data: cli } = await api.clientes.retrieve(cobro.clienteId)
+          cobro.nombre = `${cli?.nombre || ''} ${cli?.apellidos || ''}`.trim() || `Cliente ${cobro.clienteId}`
+        } catch {
+          // ignore individual failures
+        }
+      }
+    }
+
+    proximosCobros.value = items
+      .filter((item) => !!item.nombre && !!item.fecha)
+      .sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
+      .slice(0, 20)
+  } finally {
+    loading.cobros = false
+  }
+}
+
+async function loadClases() {
+  loading.clases = true
+  try {
+    const [horariosRes, disciplinasRes] = await Promise.all([
+      api.horariosDisciplinas.list({ page_size: 500, ordering: 'hora_inicio' }),
+      api.disciplinas.list({ page_size: 500, ordering: 'nombre' }),
+    ])
+    const horarios = horariosRes.data?.results || horariosRes.data || []
+    const disciplinas = disciplinasRes.data?.results || disciplinasRes.data || []
+    const mapDisc = new Map(disciplinas.map((disc) => [disc.id, disc]))
+    const palette = ['#22c55e', '#ef4444', '#f59e0b']
+    let i = 0
+    clases.value = horarios.map((horario) => {
+      const disciplina = mapDisc.get(horario.disciplina) || {}
+      const color = palette[i % palette.length]
+      const delta = i % 3 === 0 ? 2 : i % 3 === 1 ? 1 : -1
+      i += 1
+      return {
+        id: horario.id,
+        nombre: horario.disciplina_nombre || disciplina.nombre || 'Clase',
+        instructor: disciplina.instructor_nombre || '—',
+        sede: disciplina.empresa_nombre || 'Gimnasio',
+        hora_inicio: horario.hora_inicio,
+        hora_fin: horario.hora_fin,
+        inscritos: horario.inscritos != null ? Number(horario.inscritos) : null,
+        cupo:
+          disciplina.limite_personas != null
+            ? Number(disciplina.limite_personas)
+            : horario.cupo != null
+            ? Number(horario.cupo)
+            : null,
+        delta,
+        colorBarra: color,
+      }
+    })
+  } finally {
+    loading.clases = false
+  }
+}
 
 watch(
   () => dashboardData.value,
@@ -651,6 +1052,22 @@ function formatNumber(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return '—'
   return num.toLocaleString('es-MX')
+}
+
+function formatMiles(value) {
+  return Number(value || 0).toLocaleString('es-MX')
+}
+
+function fmtFecha(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  } catch {
+    return iso
+  }
 }
 
 function calcPercentChange(base, value) {
@@ -1026,7 +1443,7 @@ onMounted(async () => {
   applyGridMode()
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
-  await loadDashboard()
+  await Promise.all([loadDashboard(), loadIngresos(), loadCobros(), loadClases()])
 })
 
 onBeforeUnmount(() => {
@@ -1380,6 +1797,33 @@ watch(
 .hidden-chip:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.card {
+  @apply rounded-2xl border shadow-sm;
+  background: v-bind('theme.cardBg');
+  color: v-bind('theme.cardText');
+  border-color: v-bind('borderColor');
+}
+
+.card-head {
+  @apply px-4 sm:px-5 py-4 border-b flex items-center justify-between;
+  border-color: v-bind('borderColor');
+}
+
+.card-title {
+  @apply font-semibold;
+}
+
+.btn-ghost {
+  @apply px-3 py-1.5 rounded-md text-[13px] border;
+  border-color: v-bind('borderColor');
+  background: v-bind('chipBg');
+  color: v-bind('theme.cardText');
+}
+
+.btn-ghost:hover {
+  filter: brightness(0.97);
 }
 
 .link-theme {
