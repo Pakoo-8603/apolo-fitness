@@ -15,8 +15,19 @@ const COLLECTION_KEYS = [
 
 const LATENCY_RANGE = [120, 260]
 const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+const persistenceFlag = typeof import.meta !== 'undefined' &&
+  import.meta?.env?.VITE_KPI_PERSISTENCE === 'true'
+const usePersistence = isBrowser && persistenceFlag
 
-let database = loadFromStorage() || buildSeedData()
+if (isBrowser && !usePersistence) {
+  try {
+    window.localStorage.removeItem(KPI_STORAGE_KEY)
+  } catch (err) {
+    console.warn('[kpiMock] No se pudo limpiar localStorage:', err)
+  }
+}
+
+let database = (usePersistence && loadFromStorage()) || buildSeedData()
 let sequences = computeSequences(database)
 
 function clone (value) {
@@ -33,7 +44,7 @@ function withLatency (payload) {
 }
 
 function loadFromStorage () {
-  if (!isBrowser) return null
+  if (!usePersistence) return null
   try {
     const raw = window.localStorage.getItem(KPI_STORAGE_KEY)
     if (!raw) return null
@@ -47,7 +58,7 @@ function loadFromStorage () {
 }
 
 function persist () {
-  if (!isBrowser) return
+  if (!usePersistence) return
   try {
     window.localStorage.setItem(KPI_STORAGE_KEY, JSON.stringify(database))
   } catch (err) {
