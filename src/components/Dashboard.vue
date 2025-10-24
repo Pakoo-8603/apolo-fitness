@@ -2,379 +2,181 @@
   <div class="min-h-screen flex flex-col">
     <main class="flex-1">
       <div class="mx-auto w-full max-w-[1300px] px-5 py-6 space-y-6">
-        <section class="grid auto-rows-fr gap-5 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
-          <article class="kpi-module lg:col-span-2 xl:col-span-3">
-            <header class="module-head">
+        <header class="dashboard-head">
+          <div>
+            <h1 class="dashboard-title" :style="{ color: theme.text }">Panel principal</h1>
+            <p class="dashboard-subtitle" :style="{ color: subtext }">
+              KPIs dinámicos para monitorear tu operación.
+            </p>
+          </div>
+          <div class="dashboard-actions">
+            <button
+              v-if="isEditing"
+              class="action-btn"
+              :style="iconBtnStyle"
+              @click="resetLayout"
+            >
+              Restablecer
+            </button>
+            <button
+              class="action-btn action-btn--primary"
+              :class="{ 'is-active': isEditing }"
+              :style="editBtnStyle"
+              @click="toggleEdit"
+              :title="isEditing ? 'Cerrar edición' : 'Editar layout'"
+            >
+              <span v-if="isEditing">✔</span>
+              <span v-else>✎</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="kpi-grid" :class="{ editing: isEditing }" :style="gridStyle">
+          <article
+            v-for="module in renderedModules"
+            :key="module.id"
+            class="kpi-card"
+            :class="{ 'is-hidden': isEditing && !module.layout.visible }"
+            :style="[cardStyle, moduleGridStyle(module.layout)]"
+          >
+            <header class="kpi-card__head" :style="{ borderColor }">
               <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Ingresos vs gastos</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">
-                  Selecciona el rango para analizar los resultados financieros.
+                <h3 class="kpi-card__title">{{ module.title }}</h3>
+                <p class="kpi-card__subtitle" :style="{ color: subtext }">
+                  {{ module.subtitle }}
                 </p>
               </div>
-              <div class="module-filters">
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Desde</label>
-                  <select v-model="filters.ingresos.desde" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in ingresosMonthOptions"
-                      :key="`ing-from-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Hasta</label>
-                  <select v-model="filters.ingresos.hasta" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in ingresosMonthOptions"
-                      :key="`ing-to-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-                <button class="icon-btn" :style="iconBtnStyle" title="Actualizar tablero" @click="loadDashboard">
-                  ⟳
-                </button>
-              </div>
+              <button
+                v-if="!isEditing"
+                class="icon-btn"
+                :style="iconBtnStyle"
+                title="Actualizar KPI"
+                @click="refreshModule(module.id)"
+              >
+                ⟳
+              </button>
             </header>
-            <div class="module-body">
-              <div class="module-metrics">
-                <div class="metric">
-                  <span class="metric-label" :style="{ color: subtext }">Ingresos</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard ? '—' : money(ingresosResumen.ingresos) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">{{ ingresosResumen.periodLabel }}</span>
-                </div>
-                <div class="metric">
-                  <span class="metric-label" :style="{ color: subtext }">Gastos</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard ? '—' : money(ingresosResumen.gastos) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">{{ ingresosResumen.periodLabel }}</span>
-                </div>
-                <div class="metric">
-                  <span class="metric-label" :style="{ color: subtext }">Margen</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard ? '—' : money(ingresosResumen.diff) }}
-                  </span>
-                  <div class="metric-diff">
-                    <span class="delta-badge" :class="deltaTone(ingresosResumen.ingresoDelta, false)">
-                      {{ loadingDashboard || ingresosResumen.ingresoDelta == null
-                        ? '—'
-                        : formatPercent(ingresosResumen.ingresoDelta) }}
-                    </span>
-                    <span class="metric-caption" :style="{ color: subtext }">vs {{ ingresosResumen.prevLabel }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="module-chart">
-                <VChart v-if="!loadingDashboard" :option="ingresosVsGastosOption" autoresize class="h-64" />
-                <SkeletonCard v-else class="h-64" />
+
+            <div v-if="module.filters?.length" class="kpi-card__filters">
+              <div
+                v-for="filterDef in module.filters"
+                :key="`${module.id}-${filterDef.key}`"
+                class="field-inline"
+              >
+                <label class="field-label" :style="{ color: subtext }">
+                  {{ filterDef.label }}
+                </label>
+                <select
+                  v-model="filters[module.id][filterDef.key]"
+                  class="field-select"
+                  :style="selectStyle"
+                >
+                  <option
+                    v-for="opt in filterOptionsState[filterDef.optionsKey] || []"
+                    :key="`${module.id}-${filterDef.key}-${opt.value}`"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
               </div>
             </div>
-          </article>
 
-          <article class="kpi-module">
-            <header class="module-head">
-              <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Variación de los ingresos</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">Comparación libre por mes</p>
-              </div>
-              <div class="module-filters">
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Mes base</label>
-                  <select v-model="filters.variacionIngresos.desde" class="field-select" :style="selectStyle">
-                    <option v-for="opt in ingresosMonthOptions" :key="`var-base-${opt.value}`" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
+            <div class="kpi-card__body">
+              <p
+                v-if="moduleOutputs[module.id]?.context"
+                class="kpi-card__context"
+                :style="{ color: subtext }"
+              >
+                {{ moduleOutputs[module.id].context }}
+              </p>
+
+              <div class="metric-grid">
+                <div
+                  v-for="metric in moduleOutputs[module.id]?.metrics || []"
+                  :key="metric.id || `${module.id}-${metric.label}`"
+                  class="metric-block"
+                >
+                  <span class="metric-label" :style="{ color: subtext }">
+                    {{ metric.label }}
+                  </span>
+                  <span class="metric-value">{{ metric.value }}</span>
+                  <span
+                    v-if="metric.caption"
+                    class="metric-caption"
+                    :style="{ color: subtext }"
+                  >
+                    {{ metric.caption }}
+                  </span>
                 </div>
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Mes comparación</label>
-                  <select v-model="filters.variacionIngresos.hasta" class="field-select" :style="selectStyle">
-                    <option v-for="opt in ingresosMonthOptions" :key="`var-target-${opt.value}`" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
               </div>
-            </header>
-            <div class="module-body module-body--simple">
-              <div class="metric metric--stacked">
-                <span class="metric-value" :style="{ color: theme.text }">
-                  {{ loadingDashboard || variacionIngresosResumen.delta == null
-                    ? '—'
-                    : formatPercent(variacionIngresosResumen.delta) }}
-                </span>
-                <span class="metric-caption" :style="{ color: subtext }">
-                  {{ variacionIngresosResumen.baseLabel }} → {{ variacionIngresosResumen.targetLabel }}
-                </span>
-                <span class="metric-caption" :style="{ color: subtext }">
-                  {{ loadingDashboard ? '—' : money(variacionIngresosResumen.targetValue) }}
-                  vs {{ loadingDashboard ? '—' : money(variacionIngresosResumen.baseValue) }}
-                </span>
+
+              <div v-if="loadingDashboard" class="kpi-loading" :style="{ color: subtext }">
+                Cargando…
               </div>
             </div>
-          </article>
 
-          <article class="kpi-module">
-            <header class="module-head">
-              <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Estado de membresías</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">Activos, cancelados y suspendidos</p>
-              </div>
-              <div class="module-filters">
-                <div class="field-inline field-inline--full">
-                  <label class="field-label" :style="{ color: subtext }">Corte</label>
-                  <select v-model="filters.membresias.corte" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in membresiaCorteOptions"
-                      :key="`membresia-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </header>
-            <div class="module-body module-body--split">
-              <ul class="stat-list">
-                <li>
-                  <span>Activos</span>
-                  <strong>{{ loadingDashboard ? '—' : formatMiles(estadoMembresias.activos) }}</strong>
-                </li>
-                <li>
-                  <span>Cancelados</span>
-                  <strong>{{ loadingDashboard ? '—' : formatMiles(estadoMembresias.cancelados) }}</strong>
-                </li>
-                <li>
-                  <span>Suspendidos</span>
-                  <strong>{{ loadingDashboard ? '—' : formatMiles(estadoMembresias.suspendidos) }}</strong>
-                </li>
-              </ul>
-              <div class="metric metric--stacked">
-                <span class="metric-label" :style="{ color: subtext }">Pagos al día</span>
-                <span class="metric-value" :style="{ color: theme.text }">
-                  {{ loadingDashboard ? '—' : formatPercent(pagosResumen.porcentaje) }}
-                </span>
-                <span class="metric-caption" :style="{ color: subtext }">
-                  {{ loadingDashboard
-                    ? '—'
-                    : `${formatMiles(pagosResumen.alDia)} de ${formatMiles(pagosResumen.activos)} activos` }}
-                </span>
-              </div>
+            <div v-if="isEditing" class="layout-controls" :style="{ borderColor }">
+              <button
+                class="layout-btn"
+                @click="adjustSpan(module.id, 'colSpan', -1)"
+                :disabled="module.layout.colSpan <= 1"
+              >
+                − ancho
+              </button>
+              <button
+                class="layout-btn"
+                @click="adjustSpan(module.id, 'colSpan', 1)"
+                :disabled="module.layout.colSpan >= MAX_SPAN"
+              >
+                + ancho
+              </button>
+              <button
+                class="layout-btn"
+                @click="adjustSpan(module.id, 'rowSpan', -1)"
+                :disabled="module.layout.rowSpan <= 1"
+              >
+                − alto
+              </button>
+              <button
+                class="layout-btn"
+                @click="adjustSpan(module.id, 'rowSpan', 1)"
+                :disabled="module.layout.rowSpan >= MAX_SPAN"
+              >
+                + alto
+              </button>
+              <button
+                class="layout-btn"
+                @click="moveModule(module.id, 'up')"
+                :disabled="module.layout.order === firstOrder"
+              >
+                ▲
+              </button>
+              <button
+                class="layout-btn"
+                @click="moveModule(module.id, 'down')"
+                :disabled="module.layout.order === lastOrder"
+              >
+                ▼
+              </button>
+              <button class="layout-btn" @click="toggleVisibility(module.id)">
+                {{ module.layout.visible ? 'Ocultar' : 'Mostrar' }}
+              </button>
             </div>
-          </article>
 
-          <article class="kpi-module lg:col-span-2">
-            <header class="module-head">
-              <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Personal en el gimnasio</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">Visión por sucursal y fecha</p>
-              </div>
-              <div class="module-filters">
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Sucursal</label>
-                  <select v-model="filters.personal.sucursalId" class="field-select" :style="selectStyle">
-                    <option v-for="opt in personalSucursalOptions" :key="`sucursal-${opt.value}`" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Fecha</label>
-                  <select v-model="filters.personal.fecha" class="field-select" :style="selectStyle">
-                    <option v-for="opt in personalDateOptions" :key="`personal-date-${opt.value}`" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </header>
-            <div class="module-body module-body--stacked">
-              <div class="module-metrics module-metrics--compact">
-                <div class="metric">
-                  <span class="metric-label" :style="{ color: subtext }">Dentro del gimnasio</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard ? '—' : formatMiles(personalResumen.dentro) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">
-                    de {{ loadingDashboard ? '—' : formatMiles(personalResumen.total) }} colaboradores
-                  </span>
-                </div>
-                <div class="metric">
-                  <span class="metric-label" :style="{ color: subtext }">Hora pico</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard || !personalHoraPico.hour ? '—' : personalHoraPico.hour }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">
-                    {{ loadingDashboard ? '—' : `${formatMiles(personalHoraPico.personal)} personas` }}
-                  </span>
-                </div>
-              </div>
-              <div class="module-chart">
-                <VChart v-if="!loadingDashboard" :option="personalPorHoraOption" autoresize class="h-64" />
-                <SkeletonCard v-else class="h-64" />
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-module">
-            <header class="module-head">
-              <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Ranking de planes</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">Planes con más y menos personas</p>
-              </div>
-              <div class="module-filters">
-                <div class="field-inline field-inline--full">
-                  <label class="field-label" :style="{ color: subtext }">Mes</label>
-                  <select v-model="filters.planes.month" class="field-select" :style="selectStyle">
-                    <option v-for="opt in planesMonthOptions" :key="`plan-period-${opt.value}`" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </header>
-            <div class="module-body module-body--stacked">
-              <div class="module-metrics module-metrics--compact">
-                <div class="metric metric--stacked">
-                  <span class="metric-label" :style="{ color: subtext }">Plan con más personas</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard || !planesRanking.top ? '—' : formatMiles(planesRanking.top.personas) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">
-                    {{ loadingDashboard || !planesRanking.top ? '—' : planesRanking.top.plan_nombre }}
-                  </span>
-                </div>
-                <div class="metric metric--stacked">
-                  <span class="metric-label" :style="{ color: subtext }">Plan con menos personas</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard || !planesRanking.bottom ? '—' : formatMiles(planesRanking.bottom.personas) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">
-                    {{ loadingDashboard || !planesRanking.bottom ? '—' : planesRanking.bottom.plan_nombre }}
-                  </span>
-                </div>
-              </div>
-              <div class="module-table">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="table-row">
-                      <th class="table-header">Plan</th>
-                      <th class="table-header text-right">Personas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="loadingDashboard" class="table-row">
-                      <td colspan="2" class="py-4 text-center" :style="{ color: subtext }">Cargando…</td>
-                    </tr>
-                    <tr v-else-if="!planesDetalle.length" class="table-row">
-                      <td colspan="2" class="py-4 text-center" :style="{ color: subtext }">Sin datos</td>
-                    </tr>
-                    <tr
-                      v-else
-                      v-for="plan in planesDetalle"
-                      :key="plan.plan_id || plan.plan_nombre"
-                      class="table-row"
-                    >
-                      <td class="py-3 pr-3" :style="{ color: theme.text }">{{ plan.plan_nombre }}</td>
-                      <td class="py-3 text-right" :style="{ color: theme.text }">
-                        {{ formatMiles(plan.personas || 0) }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </article>
-
-          <article class="kpi-module lg:col-span-2 xl:col-span-2">
-            <header class="module-head">
-              <div>
-                <h3 class="module-title" :style="{ color: theme.text }">Inscripciones y bajas</h3>
-                <p class="module-subtitle" :style="{ color: subtext }">Mide el crecimiento y las bajas mensuales</p>
-              </div>
-              <div class="module-filters module-filters--wrap">
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Inscripciones · Mes base</label>
-                  <select v-model="filters.inscripciones.desde" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in inscripcionesMonthOptions"
-                      :key="`ins-base-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Inscripciones · Mes comparación</label>
-                  <select v-model="filters.inscripciones.hasta" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in inscripcionesMonthOptions"
-                      :key="`ins-target-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-                <div class="field-inline">
-                  <label class="field-label" :style="{ color: subtext }">Bajas · Mes</label>
-                  <select v-model="filters.bajas.month" class="field-select" :style="selectStyle">
-                    <option
-                      v-for="opt in inscripcionesMonthOptions"
-                      :key="`baja-${opt.value}`"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </header>
-            <div class="module-body module-body--stacked">
-              <div class="module-metrics module-metrics--compact">
-                <div class="metric metric--stacked">
-                  <span class="metric-label" :style="{ color: subtext }">Crecimiento de inscripciones</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard || inscripcionesComparativo.delta == null
-                      ? '—'
-                      : formatPercent(inscripcionesComparativo.delta) }}
-                  </span>
-                  <span class="metric-caption" :style="{ color: subtext }">
-                    {{ loadingDashboard
-                      ? '—'
-                      : `${formatMiles(inscripcionesComparativo.targetValue)} vs ${formatMiles(inscripcionesComparativo.baseValue)}` }}
-                  </span>
-                </div>
-                <div class="metric metric--stacked">
-                  <span class="metric-label" :style="{ color: subtext }">Bajas del mes</span>
-                  <span class="metric-value" :style="{ color: theme.text }">
-                    {{ loadingDashboard ? '—' : formatMiles(bajasResumen.currentValue) }}
-                  </span>
-                  <div class="metric-diff">
-                    <span class="delta-badge" :class="deltaTone(bajasResumen.delta, true)">
-                      {{ loadingDashboard || bajasResumen.delta == null ? '—' : formatPercent(bajasResumen.delta) }}
-                    </span>
-                    <span class="metric-caption" :style="{ color: subtext }">vs {{ bajasResumen.prevLabel }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="module-chart">
-                <VChart v-if="!loadingDashboard" :option="inscripcionesBajasOption" autoresize class="h-64" />
-                <SkeletonCard v-else class="h-64" />
-              </div>
+            <div v-if="isEditing && !module.layout.visible" class="hidden-overlay">
+              <span>Oculto</span>
             </div>
           </article>
         </section>
+
+        <div
+          v-if="isEditing && hiddenModules.length"
+          class="hidden-summary"
+          :style="{ color: subtext }"
+        >
+          {{ hiddenModules.length }} KPI ocult{{ hiddenModules.length === 1 ? 'o' : 'os' }} en este tablero.
+        </div>
 
         <div class="text-right">
           <RouterLink :to="{ name: 'PlanesLista' }" class="link-theme">Ver todos los planes</RouterLink>
@@ -390,7 +192,12 @@
     >
       <i class="fa-solid fa-plus"></i>
     </button>
-    <button class="fab fab--secondary" title="Buscar cliente" @click="openBuscarModal" :style="fabSecondaryStyle">
+    <button
+      class="fab fab--secondary"
+      title="Buscar cliente"
+      @click="openBuscarModal"
+      :style="fabSecondaryStyle"
+    >
       <i class="fa-regular fa-clipboard"></i>
     </button>
 
@@ -442,13 +249,22 @@
                   <div class="font-medium truncate" :style="{ color: theme.cardText }">
                     {{ c.nombre }} {{ c.apellidos }}
                   </div>
-                  <div class="text-[12px] truncate" :style="{ color: subtext }">{{ c.email || '—' }}</div>
+                  <div class="text-[12px] truncate" :style="{ color: subtext }">
+                    {{ c.email || '—' }}
+                  </div>
                 </div>
-                <span class="text-[11px] px-2 py-1 rounded-md border" :style="{ borderColor, background: chipBg, color: chipText }"
-                  >Ver</span
+                <span
+                  class="text-[11px] px-2 py-1 rounded-md border"
+                  :style="{ borderColor, background: chipBg, color: chipText }"
                 >
+                  Ver
+                </span>
               </button>
-              <div v-if="!resultados.length" class="px-4 py-8 text-center text-[13px]" :style="{ color: subtext }">
+              <div
+                v-if="!resultados.length"
+                class="px-4 py-8 text-center text-[13px]"
+                :style="{ color: subtext }"
+              >
                 Sin resultados
               </div>
             </template>
@@ -474,7 +290,9 @@
           <div class="font-semibold truncate max-w-[300px]" :style="{ color: theme.cardText }">
             {{ (resumen && (resumen.nombre + ' ' + (resumen.apellidos || ''))) || 'Cliente' }}
           </div>
-          <button class="icon-btn" :style="iconBtnStyle" title="Cerrar" @click="closePanelCliente">✕</button>
+          <button class="icon-btn" :style="iconBtnStyle" title="Cerrar" @click="closePanelCliente">
+            ✕
+          </button>
         </div>
         <div class="p-4 overflow-auto h-[calc(100%-52px)]">
           <ClientSummaryCard
@@ -500,22 +318,49 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useUiConfigStore } from '@/stores/uiConfig'
 import ClienteCrearModal from '@/views/clientes/modals/ClienteCrearModal.vue'
 import ClientSummaryCard from '@/components/ClientSummaryCard.vue'
-import SkeletonCard from '@/components/dashboard/SkeletonCard.vue'
 import api from '@/api/services'
 import http from '@/api/http'
-import { fetchDashboardSnapshot, dashboardApiContract } from '@/api/dashboard'
+import { fetchDashboardSnapshot, dashboardApiContract, dashboardMock } from '@/api/dashboard'
+import {
+  kpiDefinitions,
+  defaultLayout,
+  defaultFilters,
+  createFilterOptions,
+  initialFilterOptions,
+  formatDateLabel,
+  formatMonthLabel,
+} from '@/data/dashboard'
 
-import { use } from 'echarts/core'
-import VChart from 'vue-echarts'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
-use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent])
+const GRID_COLUMNS = 6
+const MAX_SPAN = 3
+const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v2'
+const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
 const router = useRouter()
 const auth = useAuthStore()
 const ws = useWorkspaceStore()
 const ui = useUiConfigStore()
+
+function cloneDeep(value) {
+  return JSON.parse(JSON.stringify(value ?? {}))
+}
+
+function hexToRgb(hex) {
+  const h = hex?.replace('#', '')
+  if (!h || (h.length !== 6 && h.length !== 3)) return { r: 15, g: 23, b: 42 }
+  const v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h
+  return {
+    r: parseInt(v.slice(0, 2), 16),
+    g: parseInt(v.slice(2, 4), 16),
+    b: parseInt(v.slice(4, 6), 16),
+  }
+}
+
+function isDark(hex) {
+  const { r, g, b } = hexToRgb(hex)
+  const L = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255)
+  return L < 0.6
+}
 
 const theme = computed(() => {
   const t = ui.theme?.value || ui.theme || {}
@@ -528,25 +373,13 @@ const theme = computed(() => {
     subtext: t.subtext || null,
   }
 })
-const primary = computed(() => theme.value.primary)
 
-function hexToRgb(hex) {
-  const h = hex?.replace('#', '')
-  if (!h || (h.length !== 6 && h.length !== 3)) return { r: 15, g: 23, b: 42 }
-  const v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h
-  const r = parseInt(v.slice(0, 2), 16)
-  const g = parseInt(v.slice(2, 4), 16)
-  const b = parseInt(v.slice(4, 6), 16)
-  return { r, g, b }
-}
-function isDark(hex) {
-  const { r, g, b } = hexToRgb(hex)
-  const L = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255)
-  return L < 0.6
-}
-const subtext = computed(() => theme.value.subtext || (isDark(theme.value.text) ? 'rgba(255,255,255,0.7)' : 'rgba(15,23,42,0.55)'))
+const primary = computed(() => theme.value.primary)
+const contrastOnPrimary = computed(() => (isDark(theme.value.primary) ? '#fff' : '#0f172a'))
+const subtext = computed(
+  () => theme.value.subtext || (isDark(theme.value.text) ? 'rgba(255,255,255,0.7)' : 'rgba(15,23,42,0.55)'),
+)
 const borderColor = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.08)'))
-const trackBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.12)' : '#eef2f7'))
 const skeletonBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.10)' : '#eef2f7'))
 const chipBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.08)' : '#fafbfe'))
 const chipText = computed(() => theme.value.cardText)
@@ -562,7 +395,6 @@ const fabSecondaryStyle = computed(() => ({
   border: `1px solid ${borderColor.value}`,
   boxShadow: '0 8px 24px rgba(0,0,0,.08)',
 }))
-const contrastOnPrimary = computed(() => (isDark(theme.value.primary) ? '#fff' : '#0f172a'))
 const selectStyle = computed(() => ({
   color: theme.value.cardText,
   borderColor: borderColor.value,
@@ -571,557 +403,590 @@ const selectStyle = computed(() => ({
 
 const loading = ref({ dashboard: true, buscar: false, resumen: false })
 const dashboardData = ref(null)
-const filters = reactive({
-  ingresos: { desde: '', hasta: '' },
-  variacionIngresos: { desde: '', hasta: '' },
-  membresias: { corte: '' },
-  personal: { sucursalId: '', fecha: '' },
-  planes: { month: '' },
-  inscripciones: { desde: '', hasta: '' },
-  bajas: { month: '' },
-})
+const isEditing = ref(false)
 
-const variacionDataset = computed(
-  () => dashboardData.value?.variacionIngresos ?? dashboardData.value?.ingresosVsGastos ?? [],
-)
-const ingresosMonthOptions = computed(() => {
-  const seen = new Set()
-  const opts = []
-  for (const item of variacionDataset.value) {
-    if (!item?.month || seen.has(item.month)) continue
-    seen.add(item.month)
-    opts.push({ value: item.month, label: formatMonthLabel(item.month) })
-  }
-  return opts
-})
-const inscripcionesMonthOptions = computed(() => {
-  const seen = new Set()
-  const dataset = dashboardData.value?.inscripcionesMensuales ?? []
-  const opts = []
-  for (const item of dataset) {
-    if (!item?.month || seen.has(item.month)) continue
-    seen.add(item.month)
-    opts.push({ value: item.month, label: formatMonthLabel(item.month) })
-  }
-  return opts
-})
-const membresiaCorteOptions = computed(() => {
-  const registros = [
-    ...(dashboardData.value?.estadoMembresias?.cortes ?? []),
-    ...(dashboardData.value?.pagosAlDia?.cortes ?? []),
-  ]
-  const map = new Map()
-  for (const item of registros) {
-    if (!item?.corte) continue
-    if (!map.has(item.corte)) {
-      map.set(item.corte, {
-        value: item.corte,
-        label: formatDateLabel(item.corte),
-      })
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.value.localeCompare(b.value))
-})
-const personalSnapshots = computed(() => dashboardData.value?.personalEnGimnasio?.snapshots ?? [])
-const personalSucursalOptions = computed(() => {
-  const sucursales = dashboardData.value?.personalEnGimnasio?.sucursales ?? []
-  const opts = [{ value: 'all', label: 'Todas las sucursales' }]
-  for (const suc of sucursales) {
-    if (!suc?.id) continue
-    opts.push({ value: String(suc.id), label: suc.nombre || `Sucursal ${suc.id}` })
-  }
-  return opts
-})
-const personalDateOptions = computed(() => {
-  const seen = new Set()
-  const opts = []
-  const snapshots = personalSnapshots.value
-  for (const snap of snapshots) {
-    if (!snap?.date || seen.has(snap.date)) continue
-    seen.add(snap.date)
-    opts.push({ value: snap.date, label: formatDateLabel(snap.date) })
-  }
-  return opts.sort((a, b) => a.value.localeCompare(b.value))
-})
-const planesMonthOptions = computed(() => {
-  const series = dashboardData.value?.planesRanking?.series ?? []
-  const seen = new Set()
-  const opts = []
-  for (const item of series) {
-    if (!item?.month || seen.has(item.month)) continue
-    seen.add(item.month)
-    opts.push({ value: item.month, label: formatMonthLabel(item.month) })
-  }
-  return opts.sort((a, b) => a.value.localeCompare(b.value))
-})
-const timelineMonths = computed(() => {
-  const meta = dashboardData.value?.metadata?.months
-  if (meta?.length) return [...meta]
-  const set = new Set()
-  ;(dashboardData.value?.ingresosVsGastos ?? []).forEach((item) => {
-    if (item?.month) set.add(item.month)
-  })
-  ;(dashboardData.value?.inscripcionesMensuales ?? []).forEach((item) => {
-    if (item?.month) set.add(item.month)
-  })
-  return Array.from(set).sort()
-})
-function ensureComparison(target, options) {
-  if (!options.length) {
-    target.desde = ''
-    target.hasta = ''
-    return
-  }
-  if (!options.some((o) => o.value === target.desde)) {
-    target.desde = options.length >= 2 ? options[options.length - 2].value : options[0].value
-  }
-  if (!options.some((o) => o.value === target.hasta)) {
-    target.hasta = options[options.length - 1].value
-  }
-  if (target.desde && target.hasta && target.desde > target.hasta) {
-    ;[target.desde, target.hasta] = [target.hasta, target.desde]
-  }
-}
+const filters = reactive(loadFilters())
+const layoutState = ref(loadLayout())
+const filterOptionsState = reactive(cloneDeep(initialFilterOptions))
 
-watch(
-  ingresosMonthOptions,
-  (opts) => {
-    ensureComparison(filters.ingresos, opts)
-    ensureComparison(filters.variacionIngresos, opts)
-  },
-  { immediate: true },
-)
-watch(inscripcionesMonthOptions, (opts) => ensureComparison(filters.inscripciones, opts), { immediate: true })
-watch(
-  inscripcionesMonthOptions,
-  (opts) => {
-    if (!opts.length) {
-      filters.bajas.month = ''
-      return
-    }
-    if (!opts.some((o) => o.value === filters.bajas.month)) {
-      filters.bajas.month = opts[opts.length - 1].value
-    }
-  },
-  { immediate: true },
-)
-watch(
-  membresiaCorteOptions,
-  (opts) => {
-    if (!opts.length) {
-      filters.membresias.corte = ''
-      return
-    }
-    if (!opts.some((o) => o.value === filters.membresias.corte)) {
-      filters.membresias.corte = opts[opts.length - 1].value
-    }
-  },
-  { immediate: true },
-)
-watch(
-  personalSucursalOptions,
-  (opts) => {
-    if (!opts.length) {
-      filters.personal.sucursalId = ''
-      return
-    }
-    if (!opts.some((o) => String(o.value) === String(filters.personal.sucursalId))) {
-      filters.personal.sucursalId = opts[0].value
-    }
-  },
-  { immediate: true },
-)
-watch(
-  personalDateOptions,
-  (opts) => {
-    if (!opts.length) {
-      filters.personal.fecha = ''
-      return
-    }
-    if (!opts.some((o) => o.value === filters.personal.fecha)) {
-      filters.personal.fecha = opts[opts.length - 1].value
-    }
-  },
-  { immediate: true },
-)
-watch(
-  planesMonthOptions,
-  (opts) => {
-    if (!opts.length) {
-      filters.planes.month = ''
-      return
-    }
-    if (!opts.some((o) => o.value === filters.planes.month)) {
-      filters.planes.month = opts[opts.length - 1].value
-    }
-  },
-  { immediate: true },
-)
+ensureFiltersStructure()
 
-watch(
-  () => filters.inscripciones.hasta,
-  (val) => {
-    if (val && filters.bajas.month !== val) {
-      filters.bajas.month = val
-    }
-  },
-)
+const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
+  gridAutoRows: 'minmax(160px, auto)',
+}))
+
+const cardStyle = computed(() => ({
+  background: theme.value.cardBg,
+  color: theme.value.cardText,
+  borderColor: borderColor.value,
+}))
+
+const editBtnStyle = computed(() => ({
+  borderColor: borderColor.value,
+  color: isEditing.value ? contrastOnPrimary.value : theme.value.cardText,
+  background: isEditing.value ? theme.value.primary : 'transparent',
+}))
+
+const layoutOrdered = computed(() => [...layoutState.value].sort((a, b) => a.order - b.order))
+const firstOrder = computed(() => layoutOrdered.value[0]?.order ?? 1)
+const lastOrder = computed(() => layoutOrdered.value[layoutOrdered.value.length - 1]?.order ?? layoutOrdered.value.length)
+const hiddenModules = computed(() => layoutState.value.filter((item) => !item.visible))
+
+const renderedModules = computed(() => {
+  const modules = []
+  for (const entry of layoutOrdered.value) {
+    if (!isEditing.value && !entry.visible) continue
+    const meta = moduleMap.get(entry.id)
+    if (!meta) continue
+    if (!filters[entry.id]) filters[entry.id] = { ...defaultFilters[entry.id] }
+    modules.push({ ...meta, layout: entry })
+  }
+  return modules
+})
 
 const loadingDashboard = computed(() => loading.value.dashboard)
 
-const ingresosResumen = computed(() => {
-  const dataset = dashboardData.value?.ingresosVsGastos ?? []
-  if (!dataset.length) {
-    return {
-      ingresos: 0,
-      gastos: 0,
-      diff: 0,
-      ingresoDelta: null,
-      gastoDelta: null,
-      periodLabel: 'Sin datos',
-      prevLabel: 'Sin comparación',
-      prevIngresos: 0,
-      prevGastos: 0,
-    }
+const moduleOutputs = computed(() => {
+  const data = dashboardData.value || dashboardMock
+  const outputs = {}
+  for (const def of kpiDefinitions) {
+    const resolver = moduleResolvers[def.id]
+    outputs[def.id] = resolver ? resolver(data, filters[def.id] || {}, filterOptionsState) : { metrics: [] }
   }
-  const months = [...new Set(dataset.map((d) => d.month).filter(Boolean))].sort()
-  const [from, to] = ensureRange(filters.ingresos.desde, filters.ingresos.hasta, months)
-  const selectedMonths = months.filter((m) => (!from || m >= from) && (!to || m <= to))
-  const map = new Map(dataset.map((d) => [d.month, d]))
-  const selected = selectedMonths.map((m) => map.get(m)).filter(Boolean)
-  const ingresos = selected.reduce((sum, item) => sum + Number(item?.ingresos ?? item?.total ?? 0), 0)
-  const gastos = selected.reduce((sum, item) => sum + Number(item?.gastos ?? 0), 0)
-  const diff = ingresos - gastos
-
-  const rangeLength = selectedMonths.length || 1
-  const startIdx = selectedMonths.length ? months.indexOf(selectedMonths[0]) : months.length - 1
-  const prevEndIdx = startIdx - 1
-  const prevStartIdx = prevEndIdx - (rangeLength - 1)
-  let prevMonths = []
-  if (prevStartIdx >= 0) {
-    prevMonths = months.slice(Math.max(0, prevStartIdx), prevEndIdx + 1)
-  }
-  const prevSelected = prevMonths.map((m) => map.get(m)).filter(Boolean)
-  const prevIngresos = prevSelected.reduce((sum, item) => sum + Number(item?.ingresos ?? item?.total ?? 0), 0)
-  const prevGastos = prevSelected.reduce((sum, item) => sum + Number(item?.gastos ?? 0), 0)
-  const ingresoDelta = prevMonths.length ? calcPercentChange(prevIngresos, ingresos) : null
-  const gastoDelta = prevMonths.length ? calcPercentChange(prevGastos, gastos) : null
-
-  return {
-    ingresos,
-    gastos,
-    diff,
-    ingresoDelta,
-    gastoDelta,
-    periodLabel: formatRangeLabel(selectedMonths),
-    prevLabel: prevMonths.length ? formatRangeLabel(prevMonths) : 'Sin comparación',
-    prevIngresos,
-    prevGastos,
-  }
+  return outputs
 })
 
-const variacionIngresosResumen = computed(() => {
-  const dataset = variacionDataset.value
-  if (!dataset.length) {
-    return {
-      base: null,
-      target: null,
-      baseValue: 0,
-      targetValue: 0,
-      diff: 0,
-      delta: null,
-      baseLabel: '—',
-      targetLabel: '—',
+watch(
+  () => dashboardData.value,
+  (data) => {
+    const updated = createFilterOptions(data || dashboardMock)
+    for (const key of Object.keys(updated)) {
+      filterOptionsState[key] = updated[key]
+    }
+    ensureFiltersValid()
+  },
+  { immediate: true },
+)
+
+watch(
+  layoutState,
+  (value) => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(value))
+  },
+  { deep: true },
+)
+
+watch(
+  filters,
+  (value) => {
+    if (typeof window === 'undefined') return
+    const plain = {}
+    for (const def of kpiDefinitions) {
+      plain[def.id] = { ...value[def.id] }
+    }
+    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(plain))
+  },
+  { deep: true },
+)
+
+function toggleEdit() {
+  isEditing.value = !isEditing.value
+}
+
+function refreshModule() {
+  loadDashboard()
+}
+
+function adjustSpan(id, field, delta) {
+  const entry = layoutState.value.find((item) => item.id === id)
+  if (!entry) return
+  if (!['colSpan', 'rowSpan'].includes(field)) return
+  const next = Math.min(MAX_SPAN, Math.max(1, Math.round((entry[field] || 1) + delta)))
+  entry[field] = next
+}
+
+function moveModule(id, direction) {
+  const sorted = [...layoutOrdered.value]
+  const index = sorted.findIndex((item) => item.id === id)
+  if (index === -1) return
+  const targetIndex = direction === 'up' ? index - 1 : index + 1
+  if (targetIndex < 0 || targetIndex >= sorted.length) return
+  const current = sorted[index]
+  const target = sorted[targetIndex]
+  const currentOrder = current.order
+  current.order = target.order
+  target.order = currentOrder
+  for (const entry of sorted) {
+    const original = layoutState.value.find((item) => item.id === entry.id)
+    if (original) original.order = entry.order
+  }
+}
+
+function toggleVisibility(id) {
+  const entry = layoutState.value.find((item) => item.id === id)
+  if (entry) entry.visible = !entry.visible
+}
+
+function resetLayout() {
+  layoutState.value = normalizeLayout(defaultLayout)
+  for (const def of kpiDefinitions) {
+    filters[def.id] = { ...defaultFilters[def.id] }
+  }
+  ensureFiltersValid()
+}
+
+function moduleGridStyle(layout) {
+  const colSpan = Math.min(layout?.colSpan ?? 1, GRID_COLUMNS)
+  const rowSpan = Math.min(layout?.rowSpan ?? 1, MAX_SPAN)
+  return {
+    gridColumn: `span ${colSpan}`,
+    gridRow: `span ${rowSpan}`,
+  }
+}
+
+function normalizeLayout(entries) {
+  const map = new Map((entries || []).map((item) => [item.id, item]))
+  const normalized = kpiDefinitions.map((def, index) => {
+    const saved = map.get(def.id) || {}
+    const colSpan = Math.min(MAX_SPAN, Math.max(1, Math.round(saved.colSpan ?? def.layout.colSpan ?? 1)))
+    const rowSpan = Math.min(MAX_SPAN, Math.max(1, Math.round(saved.rowSpan ?? def.layout.rowSpan ?? 1)))
+    const orderValue = Number(saved.order)
+    const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
+    const visible = saved.visible !== false
+    return { id: def.id, colSpan, rowSpan, order, visible }
+  })
+  normalized.sort((a, b) => a.order - b.order)
+  normalized.forEach((item, idx) => {
+    item.order = idx + 1
+  })
+  return normalized
+}
+
+function loadLayout() {
+  if (typeof window === 'undefined') return normalizeLayout(defaultLayout)
+  try {
+    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
+    if (!raw) return normalizeLayout(defaultLayout)
+    const parsed = JSON.parse(raw)
+    return normalizeLayout(parsed)
+  } catch {
+    return normalizeLayout(defaultLayout)
+  }
+}
+
+function loadFilters() {
+  const base = cloneDeep(defaultFilters)
+  if (typeof window === 'undefined') return base
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY)
+    if (!raw) return base
+    const parsed = JSON.parse(raw)
+    for (const def of kpiDefinitions) {
+      base[def.id] = { ...base[def.id], ...(parsed?.[def.id] || {}) }
+    }
+    return base
+  } catch {
+    return base
+  }
+}
+
+function ensureFiltersStructure() {
+  for (const def of kpiDefinitions) {
+    if (!filters[def.id]) filters[def.id] = { ...defaultFilters[def.id] }
+  }
+}
+
+function ensureFiltersValid() {
+  for (const def of kpiDefinitions) {
+    const moduleFilters = filters[def.id] || (filters[def.id] = {})
+    const defaults = defaultFilters[def.id] || {}
+    for (const filterDef of def.filters || []) {
+      const options = filterOptionsState[filterDef.optionsKey] || []
+      const current = moduleFilters[filterDef.key]
+      const exists = options.some((opt) => String(opt.value) === String(current))
+      if (!exists) {
+        const fallback =
+          defaults[filterDef.key] ??
+          options[options.length - 1]?.value ??
+          options[0]?.value ??
+          ''
+        moduleFilters[filterDef.key] = fallback
+      }
     }
   }
-  const baseKey = filters.variacionIngresos.desde
-  const targetKey = filters.variacionIngresos.hasta
-  const base = dataset.find((d) => d.month === baseKey) ?? dataset[0]
-  const target = dataset.find((d) => d.month === targetKey) ?? dataset[dataset.length - 1]
+}
+function sumBy(list, key) {
+  return (list || []).reduce((sum, item) => sum + Number(item?.[key] ?? 0), 0)
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('es-MX')
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 0,
+  })
+}
+
+function calcPercentChange(base, value) {
+  const b = Number(base ?? 0)
+  const v = Number(value ?? 0)
+  if (!Number.isFinite(b) || !Number.isFinite(v)) return null
+  if (b === 0) {
+    if (v === 0) return 0
+    return 100
+  }
+  return ((v - b) / Math.abs(b)) * 100
+}
+
+function formatPercent(value, decimals = 1) {
+  if (value == null || Number.isNaN(value)) return '—'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '—'
+  const prefix = num > 0 ? '+' : ''
+  return `${prefix}${num.toFixed(decimals)}%`
+}
+
+function monthRangeLabel(months) {
+  const ordered = Array.from(new Set((months || []).filter(Boolean))).sort()
+  if (!ordered.length) return 'Sin rango'
+  if (ordered.length === 1) return formatMonthLabel(ordered[0])
+  return `${formatMonthLabel(ordered[0])} → ${formatMonthLabel(ordered[ordered.length - 1])}`
+}
+
+function findByMonth(dataset, month) {
+  return (dataset || []).find((item) => item?.month === month)
+}
+
+function findByDate(dataset, date) {
+  return (dataset || []).find((item) => item?.corte === date || item?.date === date)
+}
+
+function resolveFinancialTotals(data, filter) {
+  const dataset = Array.isArray(data?.ingresosVsGastos) ? data.ingresosVsGastos : []
+  if (!dataset.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'Ingresos', value: '—' },
+        { label: 'Gastos', value: '—' },
+        { label: 'Margen', value: '—' },
+      ],
+    }
+  }
+  let from = filter?.from
+  let to = filter?.to
+  if (from && to && from > to) [from, to] = [to, from]
+  const selection = dataset.filter((item) => {
+    if (from && item.month < from) return false
+    if (to && item.month > to) return false
+    return true
+  })
+  const range = selection.length ? selection : dataset
+  const totalIngresos = sumBy(range, 'ingresos')
+  const totalGastos = sumBy(range, 'gastos')
+  return {
+    context: monthRangeLabel(range.map((item) => item.month)),
+    metrics: [
+      { label: 'Ingresos', value: money(totalIngresos) },
+      { label: 'Gastos', value: money(totalGastos) },
+      { label: 'Margen', value: money(totalIngresos - totalGastos) },
+    ],
+  }
+}
+
+function resolveIncomeVariation(data, filter) {
+  const baseDataset = Array.isArray(data?.variacionIngresos) && data.variacionIngresos.length
+    ? data.variacionIngresos
+    : Array.isArray(data?.ingresosVsGastos)
+    ? data.ingresosVsGastos.map((item) => ({ month: item.month, total: item.ingresos }))
+    : []
+  if (!baseDataset.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'Variación', value: '—' },
+        { label: 'Mes base', value: '—' },
+        { label: 'Mes comparación', value: '—' },
+      ],
+    }
+  }
+  const base = findByMonth(baseDataset, filter?.base) ?? baseDataset[0]
+  const target = findByMonth(baseDataset, filter?.target) ?? baseDataset[baseDataset.length - 1]
   const baseValue = Number(base?.total ?? base?.ingresos ?? 0)
   const targetValue = Number(target?.total ?? target?.ingresos ?? 0)
   const diff = targetValue - baseValue
-  const delta = base && target ? calcPercentChange(baseValue, targetValue) : null
+  const delta = calcPercentChange(baseValue, targetValue)
   return {
-    base,
-    target,
-    baseValue,
-    targetValue,
-    diff,
-    delta,
-    baseLabel: formatMonthLabel(base?.month),
-    targetLabel: formatMonthLabel(target?.month),
+    context: `Comparación ${formatMonthLabel(base?.month)} → ${formatMonthLabel(target?.month)}`,
+    metrics: [
+      { label: 'Variación', value: formatPercent(delta) },
+      { label: formatMonthLabel(base?.month), value: money(baseValue) },
+      {
+        label: formatMonthLabel(target?.month),
+        value: money(targetValue),
+        caption: `Diferencia: ${money(diff)}`,
+      },
+    ],
   }
-})
-
-const estadoMembresias = computed(() => {
-  const cortes = dashboardData.value?.estadoMembresias?.cortes ?? []
-  const corteKey = filters.membresias.corte
-  const registro = corteKey ? cortes.find((c) => c.corte === corteKey) : cortes[cortes.length - 1]
-  return {
-    activos: Number(registro?.activos ?? 0),
-    cancelados: Number(registro?.cancelados ?? 0),
-    suspendidos: Number(registro?.suspendidos ?? 0),
-    corte: registro?.corte ?? null,
-  }
-})
-
-const pagosResumen = computed(() => {
-  const cortes = dashboardData.value?.pagosAlDia?.cortes ?? []
-  const corteKey = filters.membresias.corte
-  const registro = corteKey ? cortes.find((c) => c.corte === corteKey) : cortes[cortes.length - 1]
-  const activos = Number(registro?.activos_totales ?? registro?.activos ?? 0)
-  const alDia = Number(registro?.activos_al_corriente ?? registro?.al_dia ?? 0)
-  const porcentaje = activos ? (alDia / activos) * 100 : 0
-  return {
-    corte: registro?.corte ?? null,
-    activos,
-    alDia,
-    porcentaje,
-  }
-})
-
-function aggregateSnapshots(list) {
-  if (!list.length) {
-    return { personal_total: 0, personal_en_gimnasio: 0, personal_fuera: 0, timestamp: null }
-  }
-  return list.reduce(
-    (acc, item) => ({
-      personal_total: acc.personal_total + Number(item?.personal_total ?? item?.total ?? 0),
-      personal_en_gimnasio: acc.personal_en_gimnasio + Number(item?.personal_en_gimnasio ?? item?.dentro ?? 0),
-      personal_fuera: acc.personal_fuera + Number(item?.personal_fuera ?? 0),
-      timestamp: item?.timestamp || acc.timestamp,
-    }),
-    { personal_total: 0, personal_en_gimnasio: 0, personal_fuera: 0, timestamp: null },
-  )
 }
 
-const personalSnapshotSeleccionado = computed(() => {
-  const snapshots = personalSnapshots.value
-  if (!snapshots.length) return null
-  const fecha = filters.personal.fecha
-  const sucursalId = filters.personal.sucursalId
-  const byDate = fecha ? snapshots.filter((s) => s.date === fecha) : snapshots
-  const pool = byDate.length ? byDate : snapshots
-  if (!sucursalId || sucursalId === 'all') {
-    const agg = aggregateSnapshots(pool)
-    return { ...agg, date: fecha || pool[pool.length - 1]?.date || null, sucursal_id: 'all' }
-  }
-  const match = pool.find((s) => String(s.sucursal_id) === String(sucursalId))
-  if (match) return match
-  const fallback = snapshots.filter((s) => String(s.sucursal_id) === String(sucursalId))
-  return fallback.length ? fallback[fallback.length - 1] : pool[pool.length - 1]
-})
-
-const personalResumen = computed(() => {
-  const snapshot = personalSnapshotSeleccionado.value
-  if (!snapshot) return { total: 0, dentro: 0, fuera: 0, timestamp: null }
-  const total = Number(snapshot?.personal_total ?? snapshot?.total ?? 0)
-  const dentro = Number(snapshot?.personal_en_gimnasio ?? snapshot?.dentro ?? 0)
-  const fuera = snapshot?.personal_fuera != null ? Number(snapshot.personal_fuera) : Math.max(0, total - dentro)
-  return { total, dentro, fuera, timestamp: snapshot?.timestamp ?? null }
-})
-
-const personalPorHoraSerie = computed(() => {
-  const series = dashboardData.value?.personalPorHora?.series ?? []
-  if (!series.length) return null
-  const fecha = filters.personal.fecha
-  const sucursalId = filters.personal.sucursalId
-  const match = series.find((item) => {
-    const sameDate = fecha ? item.date === fecha : true
-    const sameSucursal = !sucursalId || sucursalId === 'all' ? true : String(item.sucursal_id) === String(sucursalId)
-    return sameDate && sameSucursal
-  })
-  if (match) return match
-  if (sucursalId && sucursalId !== 'all') {
-    const fallback = series.filter((item) => String(item.sucursal_id) === String(sucursalId))
-    if (fallback.length) return fallback[fallback.length - 1]
-  }
-  if (fecha) {
-    const byDate = series.filter((item) => item.date === fecha)
-    if (byDate.length) return byDate[byDate.length - 1]
-  }
-  return series[series.length - 1]
-})
-
-const personalPorHoraBuckets = computed(() => personalPorHoraSerie.value?.buckets ?? [])
-const personalHoraPico = computed(() => {
-  const buckets = personalPorHoraBuckets.value
-  if (!buckets.length) return { hour: null, personal: 0 }
-  return buckets.reduce((acc, item) => (item.personal > (acc.personal ?? -Infinity) ? item : acc), {
-    hour: null,
-    personal: 0,
-  })
-})
-const personalPorHoraLabel = computed(() => {
-  const serie = personalPorHoraSerie.value
-  if (!serie?.date) return 'Sin fecha'
-  return formatDateLabel(serie.date)
-})
-
-const planesRanking = computed(() => {
-  const series = dashboardData.value?.planesRanking?.series ?? []
-  const monthKey = filters.planes.month
-  const registro = monthKey ? series.find((item) => item.month === monthKey) : series[series.length - 1]
+function resolveMemberships(data, filter) {
+  const cortesEstado = Array.isArray(data?.estadoMembresias?.cortes) ? data.estadoMembresias.cortes : []
+  const cortesPagos = Array.isArray(data?.pagosAlDia?.cortes) ? data.pagosAlDia.cortes : []
+  const corteKey = filter?.corte
+  const estado = findByDate(cortesEstado, corteKey) ?? cortesEstado[cortesEstado.length - 1] ?? null
+  const pagos = findByDate(cortesPagos, corteKey) ?? cortesPagos[cortesPagos.length - 1] ?? null
+  const activos = Number(estado?.activos ?? pagos?.activos_totales ?? 0)
+  const cancelados = Number(estado?.cancelados ?? 0)
+  const suspendidos = Number(estado?.suspendidos ?? 0)
+  const activosAlDia = Number(pagos?.activos_al_corriente ?? pagos?.al_dia ?? 0)
+  const porcentaje = activos ? (activosAlDia / activos) * 100 : null
+  const context = estado?.corte ? `Corte: ${formatDateLabel(estado.corte)}` : 'Sin fecha de corte'
   return {
-    month: registro?.month ?? null,
-    top: registro?.top || null,
-    bottom: registro?.bottom || null,
-    detalle: Array.isArray(registro?.detalle) ? registro.detalle : [],
+    context,
+    metrics: [
+      { label: 'Activos', value: formatNumber(activos) },
+      { label: 'Cancelados', value: formatNumber(cancelados) },
+      { label: 'Suspendidos', value: formatNumber(suspendidos) },
+      {
+        label: 'Pagos al día',
+        value: formatPercent(porcentaje),
+        caption: activos ? `${formatNumber(activosAlDia)} de ${formatNumber(activos)} activos` : 'Sin datos',
+      },
+    ],
   }
-})
-const planesDetalle = computed(() => {
-  const items = [...(planesRanking.value.detalle || [])]
-  return items.sort((a, b) => Number(b.personas || 0) - Number(a.personas || 0))
-})
+}
 
-const inscripcionesComparativo = computed(() => {
-  const dataset = dashboardData.value?.inscripcionesMensuales ?? []
-  if (!dataset.length) {
-    return { base: null, target: null, baseValue: 0, targetValue: 0, diff: 0, delta: null }
+function resolveStaffPresence(data, filter) {
+  const snapshots = Array.isArray(data?.personalEnGimnasio?.snapshots) ? data.personalEnGimnasio.snapshots : []
+  const series = Array.isArray(data?.personalPorHora?.series) ? data.personalPorHora.series : []
+  if (!snapshots.length && !series.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'En el gimnasio', value: '—' },
+        { label: 'Fuera', value: '—' },
+        { label: 'Hora pico', value: '—' },
+        { label: 'Promedio por hora', value: '—' },
+      ],
+    }
   }
-  const baseKey = filters.inscripciones.desde
-  const targetKey = filters.inscripciones.hasta
-  const base = dataset.find((d) => d.month === baseKey) ?? dataset[0]
-  const target = dataset.find((d) => d.month === targetKey) ?? dataset[dataset.length - 1]
+  const sucursalId = filter?.sucursalId ?? 'all'
+  const targetDate = filter?.fecha || snapshots[snapshots.length - 1]?.date || null
+
+  let selectedSnapshots = []
+  if (sucursalId && sucursalId !== 'all') {
+    selectedSnapshots = snapshots.filter(
+      (snap) => (!targetDate || snap.date === targetDate) && String(snap.sucursal_id) === String(sucursalId),
+    )
+    if (!selectedSnapshots.length) {
+      selectedSnapshots = snapshots.filter((snap) => String(snap.sucursal_id) === String(sucursalId))
+    }
+  } else {
+    selectedSnapshots = snapshots.filter((snap) => !targetDate || snap.date === targetDate)
+    if (!selectedSnapshots.length) selectedSnapshots = snapshots
+  }
+
+  const contextDate = targetDate || selectedSnapshots[selectedSnapshots.length - 1]?.date || null
+
+  let total = 0
+  let dentro = 0
+  let fuera = 0
+  if (sucursalId && sucursalId !== 'all') {
+    const snapshot = selectedSnapshots[selectedSnapshots.length - 1] || null
+    total = Number(snapshot?.personal_total ?? 0)
+    dentro = Number(snapshot?.personal_en_gimnasio ?? 0)
+    fuera =
+      snapshot?.personal_fuera != null
+        ? Number(snapshot.personal_fuera)
+        : Math.max(0, total - dentro)
+  } else {
+    const aggregated = selectedSnapshots.reduce(
+      (acc, item) => {
+        const totalItem = Number(item?.personal_total ?? 0)
+        const dentroItem = Number(item?.personal_en_gimnasio ?? 0)
+        const fueraItem =
+          item?.personal_fuera != null
+            ? Number(item.personal_fuera)
+            : Math.max(0, totalItem - dentroItem)
+        acc.total += totalItem
+        acc.dentro += dentroItem
+        acc.fuera += fueraItem
+        return acc
+      },
+      { total: 0, dentro: 0, fuera: 0 },
+    )
+    total = aggregated.total
+    dentro = aggregated.dentro
+    fuera = aggregated.fuera
+  }
+
+  let targetSerie = series.find(
+    (serie) =>
+      (!targetDate || serie.date === targetDate) &&
+      (sucursalId === 'all' || String(serie.sucursal_id) === String(sucursalId)),
+  )
+  if (!targetSerie && sucursalId && sucursalId !== 'all') {
+    targetSerie = series.filter((serie) => String(serie.sucursal_id) === String(sucursalId)).pop()
+  }
+  if (!targetSerie && targetDate) {
+    targetSerie = series.filter((serie) => serie.date === targetDate).pop()
+  }
+  if (!targetSerie) {
+    targetSerie = series[series.length - 1]
+  }
+
+  const buckets = Array.isArray(targetSerie?.buckets) ? targetSerie.buckets : []
+  const busiest = buckets.reduce(
+    (acc, bucket) => (bucket.personal > (acc.personal ?? -Infinity) ? bucket : acc),
+    { hour: null, personal: 0 },
+  )
+  const avg = buckets.length
+    ? buckets.reduce((sum, bucket) => sum + Number(bucket.personal ?? 0), 0) / buckets.length
+    : null
+
+  return {
+    context: contextDate ? formatDateLabel(contextDate) : 'Sin fecha seleccionada',
+    metrics: [
+      {
+        label: 'En el gimnasio',
+        value: formatNumber(dentro),
+        caption: total ? `de ${formatNumber(total)} colaboradores` : '',
+      },
+      { label: 'Fuera', value: formatNumber(fuera) },
+      {
+        label: 'Hora pico',
+        value: busiest.hour || '—',
+        caption: busiest.hour ? `${formatNumber(busiest.personal)} personas` : 'Sin datos',
+      },
+      {
+        label: 'Promedio por hora',
+        value: avg != null ? formatNumber(Math.round(avg)) : '—',
+        caption: buckets.length ? `${buckets.length} tramos analizados` : 'Sin tramos registrados',
+      },
+    ],
+  }
+}
+
+function resolvePlanHighlights(data, filter) {
+  const series = Array.isArray(data?.planesRanking?.series) ? data.planesRanking.series : []
+  if (!series.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'Plan con más personas', value: '—' },
+        { label: 'Plan con menos personas', value: '—' },
+      ],
+    }
+  }
+  const registro = series.find((item) => item.month === filter?.month) ?? series[series.length - 1]
+  const top = registro?.top
+  const bottom = registro?.bottom
+  return {
+    context: registro?.month ? formatMonthLabel(registro.month) : 'Sin mes seleccionado',
+    metrics: [
+      {
+        label: 'Plan con más personas',
+        value: top ? formatNumber(top.personas || 0) : '—',
+        caption: top?.plan_nombre || '',
+      },
+      {
+        label: 'Plan con menos personas',
+        value: bottom ? formatNumber(bottom.personas || 0) : '—',
+        caption: bottom?.plan_nombre || '',
+      },
+    ],
+  }
+}
+
+function resolveInscriptionGrowth(data, filter) {
+  const dataset = Array.isArray(data?.inscripcionesMensuales) ? data.inscripcionesMensuales : []
+  if (!dataset.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'Crecimiento', value: '—' },
+        { label: 'Mes base', value: '—' },
+        { label: 'Mes comparación', value: '—' },
+      ],
+    }
+  }
+  const base = findByMonth(dataset, filter?.from) ?? dataset[0]
+  const target = findByMonth(dataset, filter?.to) ?? dataset[dataset.length - 1]
   const baseValue = Number(base?.altas ?? 0)
   const targetValue = Number(target?.altas ?? 0)
+  const delta = calcPercentChange(baseValue, targetValue)
   const diff = targetValue - baseValue
-  const delta = base && target ? calcPercentChange(baseValue, targetValue) : null
-  return { base, target, baseValue, targetValue, diff, delta }
-})
-
-const bajasResumen = computed(() => {
-  const dataset = dashboardData.value?.bajasMensuales ?? []
-  if (!dataset.length) {
-    return { current: null, prev: null, currentValue: 0, prevValue: 0, delta: null, prevLabel: 'Sin comparación' }
+  return {
+    context: `${formatMonthLabel(base?.month)} → ${formatMonthLabel(target?.month)}`,
+    metrics: [
+      { label: 'Crecimiento', value: formatPercent(delta) },
+      { label: formatMonthLabel(base?.month), value: formatNumber(baseValue) },
+      {
+        label: formatMonthLabel(target?.month),
+        value: formatNumber(targetValue),
+        caption: `Diferencia: ${formatNumber(diff)}`,
+      },
+    ],
   }
-  const months = [...new Set(dataset.map((d) => d.month).filter(Boolean))].sort()
-  const map = new Map(dataset.map((d) => [d.month, d]))
-  const targetKey = filters.bajas.month || months[months.length - 1]
-  let current = targetKey ? map.get(targetKey) : null
+}
+
+function resolveCancellations(data, filter) {
+  const dataset = Array.isArray(data?.bajasMensuales) ? data.bajasMensuales : []
+  if (!dataset.length) {
+    return {
+      context: 'Sin datos',
+      metrics: [
+        { label: 'Bajas del mes', value: '—' },
+        { label: 'Variación', value: '—' },
+        { label: 'Mes anterior', value: '—' },
+      ],
+    }
+  }
+  const months = Array.from(new Set(dataset.map((item) => item.month).filter(Boolean))).sort()
+  const targetKey = filter?.month || months[months.length - 1]
+  let current = dataset.find((item) => item.month === targetKey)
   if (!current) current = dataset[dataset.length - 1]
   const idx = months.indexOf(current?.month)
   const prevKey = idx > 0 ? months[idx - 1] : null
-  const prev = prevKey ? map.get(prevKey) : null
+  const prev = prevKey ? dataset.find((item) => item.month === prevKey) : null
   const currentValue = Number(current?.bajas ?? 0)
   const prevValue = Number(prev?.bajas ?? 0)
   const delta = prev ? calcPercentChange(prevValue, currentValue) : null
   return {
-    current,
-    prev,
-    currentValue,
-    prevValue,
-    delta,
-    prevLabel: prev ? formatMonthLabel(prev.month) : 'Sin comparación',
-    currentLabel: current ? formatMonthLabel(current.month) : '—',
-  }
-})
-
-const ingresosVsGastosOption = computed(() => {
-  const dataset = dashboardData.value?.ingresosVsGastos ?? []
-  const allMonths = timelineMonths.value.length ? timelineMonths.value : dataset.map((d) => d.month)
-  const [from, to] = ensureRange(filters.ingresos.desde, filters.ingresos.hasta, allMonths)
-  const months = allMonths.filter((m) => (!from || m >= from) && (!to || m <= to))
-  const map = new Map(dataset.map((d) => [d.month, d]))
-  const axisLabels = months.map((m) => formatMonthShort(m))
-  const ingresosSeries = months.map((m) => Number(map.get(m)?.ingresos ?? 0))
-  const gastosSeries = months.map((m) => Number(map.get(m)?.gastos ?? 0))
-  return {
-    color: [theme.value.primary, '#ef4444'],
-    tooltip: { trigger: 'axis', valueFormatter: (v) => money(v) },
-    legend: { top: 8, right: 10, textStyle: { color: subtext.value } },
-    grid: { left: 40, right: 16, top: 60, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: axisLabels,
-      boundaryGap: true,
-      axisLabel: { fontSize: 11, color: subtext.value },
-      axisLine: { lineStyle: { color: borderColor.value } },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { fontSize: 11, color: subtext.value },
-      splitLine: { lineStyle: { color: borderColor.value } },
-    },
-    series: [
-      { name: 'Ingresos', type: 'line', smooth: true, symbol: 'circle', symbolSize: 6, data: ingresosSeries },
-      { name: 'Gastos', type: 'line', smooth: true, symbol: 'circle', symbolSize: 6, data: gastosSeries },
-    ],
-  }
-})
-
-const personalPorHoraOption = computed(() => {
-  const buckets = personalPorHoraBuckets.value
-  return {
-    color: [theme.value.primary],
-    tooltip: { trigger: 'axis' },
-    grid: { left: 36, right: 16, top: 40, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: buckets.map((b) => b.hour),
-      axisLabel: { fontSize: 11, color: subtext.value },
-      axisLine: { lineStyle: { color: borderColor.value } },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { fontSize: 11, color: subtext.value },
-      splitLine: { lineStyle: { color: borderColor.value } },
-    },
-    series: [
+    context: formatMonthLabel(current?.month),
+    metrics: [
+      { label: 'Bajas del mes', value: formatNumber(currentValue) },
       {
-        type: 'bar',
-        barMaxWidth: 26,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
-        data: buckets.map((b) => b.personal),
+        label: 'Variación',
+        value: formatPercent(delta),
+        caption: prev ? `vs ${formatMonthLabel(prev.month)}` : 'Sin comparación',
+      },
+      {
+        label: prev ? formatMonthLabel(prev.month) : 'Mes anterior',
+        value: prev ? formatNumber(prevValue) : '—',
       },
     ],
   }
-})
+}
 
-const inscripcionesBajasOption = computed(() => {
-  const inscripciones = dashboardData.value?.inscripcionesMensuales ?? []
-  const bajas = dashboardData.value?.bajasMensuales ?? []
-  const months = timelineMonths.value.length
-    ? timelineMonths.value
-    : Array.from(new Set([...inscripciones.map((d) => d.month), ...bajas.map((d) => d.month)])).sort()
-  const inscMap = new Map(inscripciones.map((d) => [d.month, d]))
-  const bajasMap = new Map(bajas.map((d) => [d.month, d]))
-  return {
-    color: [theme.value.primary, '#f97316'],
-    tooltip: { trigger: 'axis' },
-    legend: { top: 8, right: 10, textStyle: { color: subtext.value } },
-    grid: { left: 40, right: 16, top: 60, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: months.map((m) => formatMonthShort(m)),
-      axisLabel: { fontSize: 11, color: subtext.value },
-      axisLine: { lineStyle: { color: borderColor.value } },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { fontSize: 11, color: subtext.value },
-      splitLine: { lineStyle: { color: borderColor.value } },
-    },
-    series: [
-      {
-        name: 'Inscripciones',
-        type: 'bar',
-        barMaxWidth: 28,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
-        data: months.map((m) => Number(inscMap.get(m)?.altas ?? 0)),
-      },
-      {
-        name: 'Bajas',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        data: months.map((m) => Number(bajasMap.get(m)?.bajas ?? 0)),
-      },
-    ],
-  }
-})
+const moduleResolvers = {
+  financialTotals: resolveFinancialTotals,
+  incomeVariation: resolveIncomeVariation,
+  membershipsOverview: resolveMemberships,
+  staffPresence: resolveStaffPresence,
+  planHighlights: resolvePlanHighlights,
+  inscriptionGrowth: resolveInscriptionGrowth,
+  cancellations: resolveCancellations,
+}
 
 async function loadDashboard() {
   loading.value.dashboard = true
@@ -1153,16 +1018,17 @@ function openBuscarModal() {
   buscarInput.value = ''
   resultados.value = []
 }
+
 function closeBuscarModal() {
   modalBuscar.value = false
 }
 
 watch(
   buscarInput,
-  (v) => {
+  (value) => {
     clearTimeout(tDebounce)
     tDebounce = setTimeout(() => {
-      doSearch(v)
+      doSearch(value)
     }, 300)
   },
   { flush: 'post' },
@@ -1224,260 +1090,149 @@ function verEditar() {
 function onClienteCreado() {
   modalCliente.value = false
 }
+
 function cobrar(c) {
   console.log('Cobrar a:', c)
-}
-
-function money(n) {
-  return Number(n || 0).toLocaleString('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    maximumFractionDigits: 0,
-  })
-}
-function formatMiles(n) {
-  return Number(n || 0).toLocaleString('es-MX')
-}
-function formatPercent(value, decimals = 1) {
-  if (value == null) return '0%'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '0%'
-  const prefix = num > 0 ? '+' : ''
-  return `${prefix}${num.toFixed(decimals)}%`
-}
-function formatMonthLabel(key) {
-  if (!key) return '—'
-  try {
-    return new Date(`${key}-01T00:00:00`).toLocaleDateString('es-MX', {
-      month: 'long',
-      year: 'numeric',
-    })
-  } catch {
-    return key
-  }
-}
-function formatDateLabel(value) {
-  if (!value) return '—'
-  try {
-    return new Date(value).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    })
-  } catch {
-    return value
-  }
-}
-function formatRangeLabel(months) {
-  if (!months?.length) return '—'
-  if (months.length === 1) return formatMonthLabel(months[0])
-  return `${formatMonthShort(months[0])} → ${formatMonthShort(months[months.length - 1])}`
-}
-function formatMonthShort(key) {
-  if (!key) return '—'
-  try {
-    return new Date(`${key}-01T00:00:00`).toLocaleDateString('es-MX', {
-      month: 'short',
-      year: '2-digit',
-    })
-  } catch {
-    return key
-  }
-}
-function ensureRange(from, to, orderedValues) {
-  if (!orderedValues?.length) return [from || '', to || '']
-  let start = from && orderedValues.includes(from) ? from : orderedValues[0]
-  let end = to && orderedValues.includes(to) ? to : orderedValues[orderedValues.length - 1]
-  if (start > end) {
-    const tmp = start
-    start = end
-    end = tmp
-  }
-  return [start, end]
-}
-function deltaTone(value, invert = false) {
-  if (value == null) return ''
-  const num = Number(value)
-  if (!Number.isFinite(num) || num === 0) return ''
-  const positive = num > 0
-  if ((positive && !invert) || (!positive && invert && num < 0)) return 'delta-positive'
-  if ((num < 0 && !invert) || (positive && invert)) return 'delta-negative'
-  return ''
-}
-function calcPercentChange(base, value) {
-  const b = Number(base ?? 0)
-  const v = Number(value ?? 0)
-  if (!Number.isFinite(b) || !Number.isFinite(v)) return null
-  if (b === 0) {
-    if (v === 0) return 0
-    return 100
-  }
-  return ((v - b) / Math.abs(b)) * 100
 }
 </script>
 
 <style scoped>
-.kpi-module {
-  @apply rounded-2xl border shadow-sm flex flex-col;
-  background: v-bind('theme.cardBg');
-  color: v-bind('theme.cardText');
-  border-color: v-bind('borderColor');
+.dashboard-head {
+  @apply flex flex-wrap items-start justify-between gap-4;
 }
 
-.module-head {
-  @apply px-4 sm:px-5 py-4 border-b flex flex-wrap items-start justify-between gap-4;
-  border-color: v-bind('borderColor');
+.dashboard-title {
+  @apply text-2xl font-semibold;
 }
 
-.module-title {
-  @apply text-lg font-semibold capitalize;
-}
-
-.module-subtitle {
+.dashboard-subtitle {
   @apply text-sm;
-  color: v-bind('subtext');
 }
 
-.module-filters {
-  @apply flex items-end gap-3;
+.dashboard-actions {
+  @apply flex items-center gap-3;
 }
 
-.module-filters--wrap {
-  @apply flex-wrap;
+.action-btn {
+  @apply rounded-xl border px-4 py-2 text-sm font-semibold transition-colors duration-150;
+}
+
+.action-btn--primary {
+  @apply flex items-center justify-center h-10 w-10 rounded-full border;
+}
+
+.action-btn--primary.is-active {
+  box-shadow: 0 10px 26px rgba(26, 94, 255, 0.28);
+}
+
+.kpi-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.25rem;
+  border: 1px solid transparent;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+}
+
+.kpi-card.is-hidden {
+  opacity: 0.55;
+}
+
+.kpi-card__head {
+  @apply flex items-start justify-between gap-4 px-5 py-4 border-b;
+}
+
+.kpi-card__title {
+  @apply text-lg font-semibold;
+}
+
+.kpi-card__subtitle {
+  @apply text-sm;
+}
+
+.kpi-card__filters {
+  @apply flex flex-wrap gap-4 px-5 pb-2 pt-4;
 }
 
 .field-inline {
-  @apply flex flex-col gap-1 min-w-[140px];
-}
-
-.field-inline--full {
-  @apply w-full;
+  @apply flex flex-col gap-1 min-w-[150px];
 }
 
 .field-label {
   @apply text-[11px] uppercase tracking-wide font-semibold;
-  color: v-bind('subtext');
 }
 
 .field-select {
   @apply w-full rounded-lg border px-3 py-2 text-sm focus:outline-none;
-  border-color: v-bind('borderColor');
-  background: v-bind('theme.cardBg');
-  color: v-bind('theme.cardText');
 }
 
 .field-select:focus {
   outline: none;
-  border-color: v-bind(primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, v-bind(primary) 20%, transparent);
 }
 
-.icon-btn {
-  @apply h-8 w-8 rounded-lg grid place-items-center text-sm font-semibold;
-  border: 1px solid v-bind('borderColor');
-  background: v-bind('chipBg');
-  color: v-bind('theme.cardText');
-  transition: filter 0.2s ease;
+.kpi-card__body {
+  @apply px-5 py-5 flex flex-col gap-4;
 }
 
-.icon-btn:hover {
-  filter: brightness(0.95);
+.kpi-card__context {
+  @apply text-sm font-medium;
 }
 
-.module-body {
-  @apply px-4 sm:px-5 py-4 flex-1 flex flex-col gap-4;
+.metric-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
-.module-body--simple {
-  @apply justify-center items-center text-center;
-}
-
-.module-body--split {
-  @apply gap-6 sm:flex-row flex-col sm:items-start;
-}
-
-.module-body--stacked {
-  @apply gap-6;
-}
-
-.module-metrics {
-  @apply grid gap-4 sm:grid-cols-2 lg:grid-cols-3;
-}
-
-.module-metrics--compact {
-  @apply flex flex-wrap gap-6;
-}
-
-.metric {
+.metric-block {
   @apply flex flex-col gap-1;
-}
-
-.metric--stacked {
-  @apply items-start;
+  min-height: 72px;
 }
 
 .metric-label {
-  @apply text-xs uppercase tracking-wide font-semibold;
-  color: v-bind('subtext');
+  @apply text-[11px] uppercase tracking-wide font-semibold;
 }
 
 .metric-value {
-  @apply text-3xl font-semibold tracking-tight;
+  @apply text-2xl font-semibold;
 }
 
 .metric-caption {
-  @apply text-sm;
-  color: v-bind('subtext');
+  @apply text-xs;
 }
 
-.metric-diff {
-  @apply flex items-center gap-2;
+.kpi-loading {
+  @apply text-sm italic;
 }
 
-.module-chart {
-  @apply mt-2;
+.layout-controls {
+  @apply flex flex-wrap gap-2 px-5 py-3 border-t;
 }
 
-.module-table {
-  @apply mt-2 overflow-hidden rounded-xl border;
-  border-color: v-bind('borderColor');
+.layout-btn {
+  @apply rounded-lg border px-3 py-1 text-xs font-semibold uppercase tracking-wide;
 }
 
-.stat-list {
-  @apply space-y-3 text-sm;
-  color: v-bind('theme.cardText');
+.hidden-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(15, 23, 42, 0.12);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-.stat-list li {
-  @apply flex items-center justify-between;
-}
-
-.stat-list strong {
-  @apply font-semibold;
-}
-
-.delta-badge {
-  @apply inline-flex items-center justify-center px-2 py-1 text-[11px] font-semibold rounded-full uppercase tracking-wide;
-}
-
-.delta-positive {
-  background: rgba(16, 185, 129, 0.18);
-  color: #047857;
-}
-
-.delta-negative {
-  background: rgba(239, 68, 68, 0.18);
-  color: #b91c1c;
-}
-
-.table-header {
-  @apply text-left text-[11px] uppercase tracking-wide py-3 px-3;
-  color: v-bind('subtext');
-}
-
-.table-row {
-  @apply border-b;
-  border-color: v-bind('borderColor');
+.hidden-summary {
+  @apply text-sm font-medium text-right;
 }
 
 .link-theme {
@@ -1486,6 +1241,16 @@ function calcPercentChange(base, value) {
 
 .link-theme:hover {
   text-decoration: underline;
+}
+
+.icon-btn {
+  @apply h-9 w-9 rounded-xl grid place-items-center text-sm font-semibold;
+  border: 1px solid v-bind('borderColor');
+  background: transparent;
+}
+
+.icon-btn:hover {
+  filter: brightness(0.95);
 }
 
 .fab {
@@ -1509,13 +1274,29 @@ function calcPercentChange(base, value) {
   border-radius: 9999px;
 }
 
+@media (max-width: 1024px) {
+  .kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
-  .module-filters {
-    @apply w-full flex-wrap;
+  .kpi-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .kpi-card__filters {
+    @apply flex-col;
   }
 
   .field-inline {
-    @apply flex-1 min-w-[120px];
+    @apply w-full;
   }
 }
 </style>
