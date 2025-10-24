@@ -32,131 +32,7 @@
         </header>
 
         <section class="gridstack-wrapper" :class="{ editing: isEditing }">
-          <div ref="gridRef" class="grid-stack">
-            <div
-              v-for="module in renderedModules"
-              :key="module.id"
-              class="grid-stack-item"
-              :data-gs-id="module.id"
-              :data-gs-w="module.layout.w"
-              :data-gs-h="module.layout.h"
-              :data-gs-x="module.layout.x"
-              :data-gs-y="module.layout.y"
-              data-gs-auto-position="true"
-            >
-              <div
-                class="grid-stack-item-content kpi-card"
-                :class="{ editing: isEditing }"
-                :style="cardStyle"
-                @mouseleave="onModuleLeave(module.id)"
-              >
-                <header class="kpi-card__head" :style="{ borderColor }">
-                  <div class="kpi-card__title-wrap">
-                    <button v-if="isEditing" class="drag-handle" type="button" title="Mover KPI">
-                      <i class="fa-solid fa-grip-dots"></i>
-                    </button>
-                    <div>
-                      <h3 class="kpi-card__title">{{ module.title }}</h3>
-                      <p class="kpi-card__subtitle" :style="{ color: subtext }">
-                        {{ module.subtitle }}
-                      </p>
-                    </div>
-                  </div>
-                  <div class="kpi-card__actions">
-                    <button
-                      v-if="module.filters?.length"
-                      class="icon-btn filter-toggle"
-                      type="button"
-                      :style="iconBtnStyle"
-                      :class="{ 'is-active': activeFilterPanel === module.id }"
-                      title="Ajustar filtros"
-                      @click.stop="toggleFilterPanel(module.id)"
-                    >
-                      <i class="fa-solid fa-sliders"></i>
-                    </button>
-                    <button
-                      v-if="isEditing"
-                      class="icon-btn eye-btn"
-                      type="button"
-                      :style="iconBtnStyle"
-                      title="Ocultar KPI"
-                      @click.stop="toggleVisibility(module.id)"
-                    >
-                      <i class="fa-regular fa-eye"></i>
-                    </button>
-                  </div>
-                </header>
-
-                <transition name="fade">
-                  <div
-                    v-if="module.filters?.length && activeFilterPanel === module.id"
-                    class="kpi-card__filters floating"
-                    @mouseenter="cancelFilterHide"
-                    @mouseleave="scheduleFilterHide"
-                  >
-                    <div
-                      v-for="filterDef in module.filters"
-                      :key="`${module.id}-${filterDef.key}`"
-                      class="field-inline"
-                    >
-                      <label class="field-label" :style="{ color: subtext }">
-                        {{ filterDef.label }}
-                      </label>
-                      <select
-                        v-model="filters[module.id][filterDef.key]"
-                        class="field-select"
-                        :style="selectStyle"
-                        @change="handleFilterInteraction(module.id)"
-                        @blur="scheduleFilterHide"
-                      >
-                        <option
-                          v-for="opt in filterOptionsState[filterDef.optionsKey] || []"
-                          :key="`${module.id}-${filterDef.key}-${opt.value}`"
-                          :value="opt.value"
-                        >
-                          {{ opt.label }}
-                        </option>
-                      </select>
-                    </div>
-                  </div>
-                </transition>
-
-                <div class="kpi-card__body">
-                  <p
-                    v-if="moduleOutputs[module.id]?.context"
-                    class="kpi-card__context"
-                    :style="{ color: subtext }"
-                  >
-                    {{ moduleOutputs[module.id].context }}
-                  </p>
-
-                  <div class="metric-grid">
-                    <div
-                      v-for="metric in moduleOutputs[module.id]?.metrics || []"
-                      :key="metric.id || `${module.id}-${metric.label}`"
-                      class="metric-block"
-                    >
-                      <span class="metric-label" :style="{ color: subtext }">
-                        {{ metric.label }}
-                      </span>
-                      <span class="metric-value">{{ metric.value }}</span>
-                      <span
-                        v-if="metric.caption"
-                        class="metric-caption"
-                        :style="{ color: subtext }"
-                      >
-                        {{ metric.caption }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="loadingDashboard" class="kpi-loading" :style="{ color: subtext }">
-                    Cargando…
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div ref="gridRef" class="grid-stack"></div>
         </section>
 
         <div
@@ -310,13 +186,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, createApp, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useUiConfigStore } from '@/stores/uiConfig'
 import ClienteCrearModal from '@/views/clientes/modals/ClienteCrearModal.vue'
 import ClientSummaryCard from '@/components/ClientSummaryCard.vue'
+import KpiModuleCard from '@/components/dashboard/KpiModuleCard.vue'
 import api from '@/api/services'
 import http from '@/api/http'
 import { fetchDashboardSnapshot, dashboardApiContract, dashboardMock } from '@/api/dashboard'
@@ -336,7 +213,7 @@ const GRID_COLUMNS = 6
 const ROW_HEIGHT = 108
 const MAX_COL_SPAN = 3
 const MAX_ROW_SPAN = 6
-const GRID_MARGIN = 18
+const GRID_MARGIN = 22
 const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v3'
 const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
@@ -419,6 +296,8 @@ const activeFilterPanel = ref(null)
 let filterHideTimer = null
 let pendingGridRefresh = false
 let suppressGridSync = false
+const widgetApps = new Map()
+let previousRenderCallback = null
 
 ensureFiltersStructure()
 
@@ -577,14 +456,14 @@ function scheduleGridSync() {
     return
   }
   nextTick(() => {
-    applyStateToGrid()
+    renderGrid()
   })
 }
 
 async function rebuildGrid() {
   destroyGrid()
-  if (!renderedModules.value.length) return
   await nextTick()
+  if (!gridRef.value) return
   initGrid()
 }
 
@@ -602,7 +481,7 @@ function initGrid() {
   const grid = GridStack.init(
     {
       column: GRID_COLUMNS,
-      margin: `${GRID_MARGIN}px`,
+      margin: GRID_MARGIN,
       cellHeight: ROW_HEIGHT,
       float: false,
       disableOneColumnMode: false,
@@ -618,45 +497,21 @@ function initGrid() {
   grid.on('resizestop', handleGridChange)
   grid.on('dragstart', guardStaticInteraction)
   grid.on('resizestart', guardStaticInteraction)
-  applyStateToGrid()
-  updateGridInteractivity()
+  grid.on('removed', handleGridRemoved)
+  renderGrid()
 }
 
 function destroyGrid() {
   if (!gridInstance.value) return
+  detachAllWidgetApps()
   gridInstance.value.off('change', handleGridChange)
   gridInstance.value.off('dragstop', handleGridChange)
   gridInstance.value.off('resizestop', handleGridChange)
   gridInstance.value.off('dragstart', guardStaticInteraction)
   gridInstance.value.off('resizestart', guardStaticInteraction)
+  gridInstance.value.off('removed', handleGridRemoved)
   gridInstance.value.destroy(false)
   gridInstance.value = null
-}
-
-function applyStateToGrid() {
-  const grid = gridInstance.value
-  if (!grid) return
-  grid.batchUpdate()
-  for (const entry of layoutState.value) {
-    if (!entry.visible) continue
-    const el = gridRef.value?.querySelector(`.grid-stack-item[data-gs-id="${entry.id}"]`)
-    if (!el) continue
-    const width = clamp(entry.w ?? entry.colSpan ?? 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
-    const height = clamp(entry.h ?? entry.rowSpan ?? 1, 1, MAX_ROW_SPAN)
-    const x = clamp(entry.x ?? 0, 0, GRID_COLUMNS - width)
-    const y = Math.max(0, entry.y ?? 0)
-    grid.update(el, {
-      x,
-      y,
-      w: width,
-      h: height,
-      noMove: !isEditing.value,
-      noResize: !isEditing.value,
-      locked: !isEditing.value,
-    })
-  }
-  grid.commit()
-  grid.compact()
 }
 
 function updateGridInteractivity() {
@@ -667,10 +522,11 @@ function updateGridInteractivity() {
   grid.enableMove(editable, true)
   grid.enableResize(editable, true)
   if (grid.opts) {
-    grid.opts.margin = `${GRID_MARGIN}px`
+    grid.opts.margin = GRID_MARGIN
   }
   if (grid.el?.style) {
-    grid.el.style.setProperty('--gs-grid-margin', `${GRID_MARGIN}px`)
+    const marginValue = typeof GRID_MARGIN === 'number' ? `${GRID_MARGIN}px` : String(GRID_MARGIN)
+    grid.el.style.setProperty('--gs-grid-margin', marginValue)
   }
   const nodes = grid.engine?.nodes || []
   nodes.forEach((node) => {
@@ -683,6 +539,101 @@ function updateGridInteractivity() {
       locked: !editable,
     })
   })
+}
+
+function renderGrid() {
+  const grid = gridInstance.value
+  if (!grid) return
+  suppressGridSync = true
+  detachAllWidgetApps()
+  const widgets = []
+  for (const entry of layoutOrdered.value) {
+    if (!entry.visible) continue
+    if (!moduleMap.has(entry.id)) continue
+    const width = clamp(entry.w ?? entry.colSpan ?? 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+    const height = clamp(entry.h ?? entry.rowSpan ?? 1, 1, MAX_ROW_SPAN)
+    const x = clamp(entry.x ?? 0, 0, GRID_COLUMNS - width)
+    const y = Math.max(0, entry.y ?? 0)
+    entry.w = width
+    entry.h = height
+    entry.x = x
+    entry.y = y
+    widgets.push({
+      id: entry.id,
+      x,
+      y,
+      w: width,
+      h: height,
+      noMove: !isEditing.value,
+      noResize: !isEditing.value,
+      locked: !isEditing.value,
+    })
+  }
+  grid.load(widgets, true)
+  updateGridInteractivity()
+  nextTick(() => {
+    suppressGridSync = false
+  })
+}
+
+function handleGridRemoved(_event, items) {
+  if (!items) return
+  items.forEach((item) => {
+    const rawId = item?.id ?? item?.el?.dataset?.gsId ?? item?.el?.getAttribute?.('data-gs-id')
+    if (rawId != null) {
+      detachWidgetApp(String(rawId))
+    }
+  })
+}
+
+function detachWidgetApp(id) {
+  const record = widgetApps.get(String(id))
+  if (!record) return
+  record.app.unmount()
+  record.el.classList.remove('kpi-card-host')
+  widgetApps.delete(String(id))
+}
+
+function detachAllWidgetApps() {
+  for (const id of Array.from(widgetApps.keys())) {
+    detachWidgetApp(id)
+  }
+}
+
+function renderModuleInto(el, moduleId) {
+  detachWidgetApp(moduleId)
+  el.classList.add('kpi-card-host')
+  const app = createApp(KpiModuleCard, { moduleId: String(moduleId) })
+  app.provide('dashboardState', sharedDashboardState)
+  app.mount(el)
+  widgetApps.set(String(moduleId), { app, el })
+}
+
+function installRenderCallback() {
+  previousRenderCallback = GridStack.renderCB
+  GridStack.renderCB = (el, widget) => {
+    const id = widget?.id ?? widget?.el?.dataset?.gsId
+    if (id != null && moduleMap.has(String(id))) {
+      renderModuleInto(el, String(id))
+      return
+    }
+    if (previousRenderCallback) {
+      previousRenderCallback(el, widget)
+    } else if (widget?.content) {
+      el.textContent = widget.content
+    } else {
+      el.textContent = ''
+    }
+  }
+}
+
+function uninstallRenderCallback() {
+  if (previousRenderCallback) {
+    GridStack.renderCB = previousRenderCallback
+    previousRenderCallback = null
+  } else {
+    GridStack.renderCB = undefined
+  }
 }
 
 function guardStaticInteraction(event, el) {
@@ -703,6 +654,7 @@ function guardStaticInteraction(event, el) {
 }
 
 function handleGridChange() {
+  if (suppressGridSync) return
   const grid = gridInstance.value
   if (!grid) return
   const nodes = grid.engine?.nodes || []
@@ -767,6 +719,37 @@ function onModuleLeave(id) {
   if (activeFilterPanel.value === id) {
     scheduleFilterHide()
   }
+}
+
+function updateModuleFilter(id, key, value) {
+  if (!filters[id]) {
+    filters[id] = { ...(defaultFilters[id] || {}) }
+  }
+  filters[id][key] = value
+}
+
+const sharedDashboardState = {
+  moduleMap,
+  filters,
+  filterOptionsState,
+  defaultFilters,
+  moduleOutputs,
+  theme,
+  subtext,
+  borderColor,
+  cardStyle,
+  iconBtnStyle,
+  selectStyle,
+  loadingDashboard,
+  isEditing,
+  activeFilterPanel,
+  toggleFilterPanel,
+  toggleVisibility,
+  scheduleFilterHide,
+  cancelFilterHide,
+  handleFilterInteraction,
+  onModuleLeave,
+  updateFilter: updateModuleFilter,
 }
 
 function normalizeLayout(entries) {
@@ -1281,6 +1264,7 @@ async function loadDashboard() {
 }
 
 onMounted(async () => {
+  installRenderCallback()
   await nextTick()
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
@@ -1291,6 +1275,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   destroyGrid()
   cancelFilterHide()
+  uninstallRenderCallback()
 })
 
 const modalCliente = ref(false)
@@ -1428,144 +1413,20 @@ function cobrar(c) {
   padding: 0 !important;
 }
 
-.kpi-card {
-  position: relative;
+.grid-stack-item-content.kpi-card-host {
+  padding: 0;
   display: flex;
-  flex-direction: column;
   height: 100%;
-  border-radius: 1.25rem;
-  border: 1px solid transparent;
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.kpi-card:hover {
-  box-shadow: 0 22px 42px rgba(15, 23, 42, 0.08);
-}
-
-.kpi-card__head {
-  @apply flex items-start justify-between gap-4 px-5 py-4 border-b;
-}
-
-.kpi-card.editing .kpi-card__head {
-  cursor: grab;
-}
-
-.kpi-card.editing .kpi-card__head:active {
-  cursor: grabbing;
-}
-
-.kpi-card__title-wrap {
-  @apply flex items-start gap-3;
-}
-
-.kpi-card__title {
-  @apply text-lg font-semibold;
-}
-
-.kpi-card__subtitle {
-  @apply text-sm;
-}
-
-.kpi-card__actions {
-  @apply flex items-center gap-2;
-}
-
-.filter-toggle {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.filter-toggle.is-active,
-.kpi-card:hover .filter-toggle {
-  opacity: 1;
-}
-
-.kpi-card__filters {
-  @apply flex flex-col gap-3;
-}
-
-.kpi-card__filters.floating {
-  position: absolute;
-  top: 64px;
-  right: 24px;
-  background: v-bind('theme.cardBg');
-  border: 1px solid v-bind('borderColor');
-  border-radius: 1rem;
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
-  padding: 1rem;
-  min-width: 220px;
-  z-index: 20;
-}
-
-.field-inline {
-  @apply flex flex-col gap-1 min-w-[150px];
-}
-
-.field-label {
-  @apply text-[11px] uppercase tracking-wide font-semibold;
-}
-
-.field-select {
-  @apply w-full rounded-lg border px-3 py-2 text-sm focus:outline-none;
-}
-
-.field-select:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, v-bind(primary) 20%, transparent);
-}
-
-.kpi-card__body {
-  @apply px-5 py-5 flex flex-col gap-4;
-}
-
-.kpi-card__context {
-  @apply text-sm font-medium;
-}
-
-.metric-grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-}
-
-.metric-block {
-  @apply flex flex-col gap-1;
-  min-height: 72px;
-}
-
-.metric-label {
-  @apply text-[11px] uppercase tracking-wide font-semibold;
-}
-
-.metric-value {
-  @apply text-2xl font-semibold;
-}
-
-.metric-caption {
-  @apply text-xs;
-}
-
-.kpi-loading {
-  @apply text-sm italic;
-}
-
-.drag-handle {
-  @apply flex items-center justify-center rounded-full text-base;
-  width: 32px;
-  height: 32px;
-  border: 1px dashed color-mix(in srgb, v-bind(primary) 40%, transparent);
-  color: v-bind('subtext');
-  cursor: grab;
-  flex-shrink: 0;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
+.grid-stack-item-content.kpi-card-host > .kpi-card {
+  flex: 1 1 auto;
 }
 
 .icon-btn {
-  @apply h-9 w-9 rounded-xl grid place-items-center text-sm font-semibold;
+  @apply inline-flex items-center justify-center rounded-xl text-sm font-semibold;
+  width: 36px;
+  height: 36px;
   border: 1px solid v-bind('borderColor');
   background: transparent;
   transition: filter 0.15s ease;
@@ -1574,6 +1435,7 @@ function cobrar(c) {
 .icon-btn:hover {
   filter: brightness(0.95);
 }
+
 
 .hidden-summary {
   @apply flex flex-wrap items-center justify-end gap-3 text-sm pt-2;
