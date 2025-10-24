@@ -432,8 +432,22 @@ function renderGrid() {
   ignoreGridEvents = true
   detachAllWidgetApps()
   grid.load(nodes)
+  mountRenderedWidgets()
   ignoreGridEvents = false
   applyGridMode()
+}
+
+function mountRenderedWidgets() {
+  const grid = gridInstance.value
+  if (!grid) return
+  const nodes = grid.engine?.nodes || []
+  for (const node of nodes) {
+    const id = node?.id ?? node?.el?.dataset?.gsId
+    if (id == null || !moduleMap.has(String(id))) continue
+    const host = node?.el?.querySelector('.grid-stack-item-content')
+    if (!host) continue
+    renderModuleInto(host, String(id))
+  }
 }
 
 function normalizeLayout(entries) {
@@ -1091,7 +1105,9 @@ function onGridChange() {
   })
   updatingFromGrid = true
   layoutState.value = mergeLayout(layoutState.value, updates)
-  updatingFromGrid = false
+  nextTick(() => {
+    updatingFromGrid = false
+  })
   persistLayout(layoutState.value)
 }
 
