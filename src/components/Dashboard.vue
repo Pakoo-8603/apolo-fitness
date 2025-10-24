@@ -28,7 +28,7 @@
 
         <transition name="fade">
           <div
-            v-if="hiddenModules.length"
+            v-if="isEditing && hiddenModules.length"
             class="hidden-modules"
             :style="{ background: theme.cardBg, color: theme.cardText, borderColor }"
           >
