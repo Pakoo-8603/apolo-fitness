@@ -84,16 +84,6 @@
                     >
                       <i class="fa-regular fa-eye"></i>
                     </button>
-                    <button
-                      v-else
-                      class="icon-btn refresh-btn"
-                      type="button"
-                      :style="iconBtnStyle"
-                      title="Actualizar KPI"
-                      @click="refreshModule(module.id)"
-                    >
-                      ⟳
-                    </button>
                   </div>
                 </header>
 
@@ -343,10 +333,10 @@ import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 
 const GRID_COLUMNS = 6
-const ROW_HEIGHT = 170
+const ROW_HEIGHT = 120
 const MAX_COL_SPAN = 3
-const MAX_ROW_SPAN = 3
-const GRID_MARGIN = 16
+const MAX_ROW_SPAN = 4
+const GRID_MARGIN = 12
 const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v3'
 const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
@@ -525,9 +515,7 @@ watch(
 )
 
 watch(isEditing, (active) => {
-  if (gridInstance.value) {
-    gridInstance.value.setStatic(!active)
-  }
+  updateGridInteractivity()
   if (!active) {
     activeFilterPanel.value = null
   }
@@ -538,10 +526,6 @@ function toggleEdit() {
   if (!isEditing.value) {
     activeFilterPanel.value = null
   }
-}
-
-function refreshModule() {
-  loadDashboard()
 }
 
 function toggleVisibility(id) {
@@ -620,7 +604,7 @@ function initGrid() {
       column: GRID_COLUMNS,
       margin: GRID_MARGIN,
       cellHeight: ROW_HEIGHT,
-      float: true,
+      float: false,
       disableOneColumnMode: false,
       staticGrid: !isEditing.value,
       draggable: { handle: '.drag-handle' },
@@ -630,12 +614,17 @@ function initGrid() {
   )
   gridInstance.value = grid
   grid.on('change', handleGridChange)
+  grid.on('dragstop', handleGridChange)
+  grid.on('resizestop', handleGridChange)
   applyStateToGrid()
+  updateGridInteractivity()
 }
 
 function destroyGrid() {
   if (!gridInstance.value) return
   gridInstance.value.off('change', handleGridChange)
+  gridInstance.value.off('dragstop', handleGridChange)
+  gridInstance.value.off('resizestop', handleGridChange)
   gridInstance.value.destroy(false)
   gridInstance.value = null
 }
@@ -655,6 +644,22 @@ function applyStateToGrid() {
     grid.update(el, { x, y, w: width, h: height })
   }
   grid.commit()
+  grid.compact()
+}
+
+function updateGridInteractivity() {
+  const grid = gridInstance.value
+  if (!grid) return
+  const editable = isEditing.value
+  grid.setStatic(!editable)
+  grid.enableMove(editable)
+  grid.enableResize(editable)
+  const nodes = grid.engine?.nodes || []
+  nodes.forEach((node) => {
+    if (!node?.el) return
+    grid.movable(node.el, editable)
+    grid.resizable(node.el, editable)
+  })
 }
 
 function handleGridChange() {
