@@ -304,6 +304,7 @@ const layoutState = ref(normalizeLayout(loadStoredLayout() || defaultLayout))
 const hiddenModules = computed(() => layoutState.value.filter((item) => item.visible === false))
 
 const loadingDashboard = computed(() => loading.dashboard)
+let lastWorkspaceSignature = null
 
 const moduleOutputs = computed(() => {
   const data = dashboardData.value || {}
@@ -325,6 +326,15 @@ watch(
     ensureFiltersValid()
   },
   { immediate: true },
+)
+
+watch(
+  () => [ws.empresaKey, ws.sucursalKey, auth.isAuthenticated],
+  () => {
+    if (!auth.isAuthenticated) return
+    if (!ws.initialized) return
+    loadDashboard()
+  },
 )
 
 function ensureFiltersValid() {
@@ -1006,14 +1016,27 @@ const moduleResolvers = {
   cancellations: resolveCancellations,
 }
 
-async function loadDashboard() {
+async function loadDashboard(force = false) {
+  if (loading.dashboard && !force) return
+  const empresaId = ws.empresaId ?? null
+  const sucursalId = ws.sucursalId ?? null
+  const signature = `${empresaId ?? 'no-emp'}|${sucursalId ?? 'no-suc'}`
+  if (!force && signature === lastWorkspaceSignature && dashboardData.value) {
+    return
+  }
+  if (!empresaId) {
+    dashboardData.value = null
+    lastWorkspaceSignature = signature
+    return
+  }
   loading.dashboard = true
   try {
-    const data = await fetchDashboardSnapshot()
+    const data = await fetchDashboardSnapshot({ empresaId, sucursalId })
     dashboardData.value = data
     if (import.meta.env.DEV && typeof window !== 'undefined') {
       window.__DASHBOARD_API_CONTRACT__ = dashboardApiContract
     }
+    lastWorkspaceSignature = signature
   } finally {
     loading.dashboard = false
   }
@@ -1026,7 +1049,7 @@ onMounted(async () => {
   applyGridMode()
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
-  await loadDashboard()
+  await loadDashboard(true)
 })
 
 onBeforeUnmount(() => {

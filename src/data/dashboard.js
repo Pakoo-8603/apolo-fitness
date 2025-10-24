@@ -58,13 +58,19 @@ function toDateOptions(values = []) {
   }))
 }
 
+const BRANCH_SHARE_MAP = {
+  1: 0.62,
+  2: 0.38,
+}
+
 export const dashboardApiContract = {
   ingresosVsGastos: {
     description:
-      'Totales mensuales de ingresos (ventas) frente a egresos (gastos) para un rango dado.',
+      'Totales mensuales de ingresos (ventas) frente a egresos (gastos) para un rango dado. Filtrable por empresa y, opcionalmente, por sucursal.',
     models: ['ventas.Venta', 'finanzas.Egreso'],
     requestExample: {
       empresa_id: 3,
+      sucursal_id: null,
       month_from: '2024-01',
       month_to: '2024-04',
     },
@@ -79,10 +85,11 @@ export const dashboardApiContract = {
 
   variacionIngresos: {
     description:
-      'Serie mensual sólo de ingresos para comparar libremente dos meses y calcular variaciones.',
+      'Serie mensual sólo de ingresos para comparar libremente dos meses y calcular variaciones. Filtrable por empresa y sucursal.',
     models: ['ventas.Venta'],
     requestExample: {
       empresa_id: 3,
+      sucursal_id: null,
       month_from: '2024-01',
       month_to: '2024-12',
     },
@@ -97,9 +104,9 @@ export const dashboardApiContract = {
 
   estadoMembresias: {
     description:
-      'Conteos históricos de membresías activas, canceladas y suspendidas (para filtrar por corte).',
+      'Conteos históricos de membresías activas, canceladas y suspendidas (para filtrar por corte). Filtrable por empresa y sucursal.',
     models: ['planes.AltaPlan', 'clientes.Cliente'],
-    requestExample: { empresa_id: 3 },
+    requestExample: { empresa_id: 3, sucursal_id: null },
     responseExample: {
       cortes: [
         { corte: '2024-03-31', activos: 298, cancelados: 38, suspendidos: 12 },
@@ -109,9 +116,10 @@ export const dashboardApiContract = {
   },
 
   pagosAlDia: {
-    description: 'Cuántas membresías activas tienen pagos al día vs el total de activas.',
+    description:
+      'Cuántas membresías activas tienen pagos al día vs el total de activas. Filtrable por empresa y sucursal.',
     models: ['planes.AltaPlan', 'ventas.Venta', 'ventas.DetalleVenta'],
-    requestExample: { empresa_id: 3 },
+    requestExample: { empresa_id: 3, sucursal_id: null },
     responseExample: {
       cortes: [
         { corte: '2024-03-31', activos_totales: 298, activos_al_corriente: 247 },
@@ -164,9 +172,10 @@ export const dashboardApiContract = {
   },
 
   planesRanking: {
-    description: 'Planes con más y menos personas activas por mes (ranking completo para listarlo).',
+    description:
+      'Planes con más y menos personas activas por mes (ranking completo para listarlo). Filtrable por empresa y sucursal.',
     models: ['planes.Plan', 'planes.AltaPlan'],
-    requestExample: { empresa_id: 3, month: '2024-04' },
+    requestExample: { empresa_id: 3, sucursal_id: null, month: '2024-04' },
     responseExample: {
       series: [
         {
@@ -183,9 +192,10 @@ export const dashboardApiContract = {
   },
 
   inscripcionesMensuales: {
-    description: 'Número de altas (inscripciones) por mes para medir crecimiento.',
+    description:
+      'Número de altas (inscripciones) por mes para medir crecimiento. Filtrable por empresa y sucursal.',
     models: ['planes.AltaPlan'],
-    requestExample: { empresa_id: 3, month_from: '2023-12', month_to: '2024-04' },
+    requestExample: { empresa_id: 3, sucursal_id: null, month_from: '2023-12', month_to: '2024-04' },
     responseExample: {
       months: [
         { month: '2024-03', altas: 42 },
@@ -195,9 +205,10 @@ export const dashboardApiContract = {
   },
 
   bajasMensuales: {
-    description: 'Cantidad de bajas/cancelaciones de membresías por mes.',
+    description:
+      'Cantidad de bajas/cancelaciones de membresías por mes. Filtrable por empresa y sucursal.',
     models: ['planes.AltaPlan'],
-    requestExample: { empresa_id: 3, month_from: '2023-12', month_to: '2024-04' },
+    requestExample: { empresa_id: 3, sucursal_id: null, month_from: '2023-12', month_to: '2024-04' },
     responseExample: {
       months: [
         { month: '2024-03', bajas: 9 },
@@ -207,7 +218,7 @@ export const dashboardApiContract = {
   },
 }
 
-export const dashboardMock = {
+const dashboardRawMock = {
   "metadata": {
     "months": [
       "2024-01",
@@ -236,7 +247,15 @@ export const dashboardMock = {
       "2025-12"
     ],
     "currentMonth": "2025-12",
-    "defaultSucursalId": 1
+    "defaultEmpresaId": 3,
+    "defaultSucursalId": 1,
+    "empresas": [
+      { "id": 3, "nombre": "Apolo Fitness" }
+    ],
+    "sucursales": [
+      { "id": 1, "empresa_id": 3, "nombre": "Matriz Centro" },
+      { "id": 2, "empresa_id": 3, "nombre": "Sucursal Norte" }
+    ]
   },
   "ingresosVsGastos": [
     {
@@ -2822,6 +2841,219 @@ export const dashboardMock = {
   ]
 }
 
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value ?? null))
+}
+
+function scaleValue(value, share, decimals = 0) {
+  const numeric = Number(value ?? 0) * share
+  if (!Number.isFinite(numeric)) return 0
+  if (decimals > 0) {
+    return Number(numeric.toFixed(decimals))
+  }
+  return Math.max(0, Math.round(numeric))
+}
+
+function scaleRecord(record, share, config = {}) {
+  const result = { ...record }
+  for (const [key, settings] of Object.entries(config)) {
+    if (key === '__after') continue
+    if (!(key in record)) continue
+    const decimals = typeof settings?.decimals === 'number' ? settings.decimals : 0
+    const min = settings?.min ?? 0
+    const max = settings?.max ?? null
+    let value = scaleValue(record[key], share, decimals)
+    if (max != null && value > max) value = max
+    if (min != null && value < min) value = min
+    result[key] = value
+  }
+  if (typeof config.__after === 'function') {
+    return config.__after(result, record, share) ?? result
+  }
+  return result
+}
+
+function scaleSeries(series = [], share, config = {}) {
+  if (!Array.isArray(series)) return []
+  return series.map((item) => scaleRecord(item, share, config))
+}
+
+function scalePlanRanking(entry, share) {
+  if (!entry) return entry
+  const detalle = Array.isArray(entry.detalle)
+    ? entry.detalle.map((item) => ({
+        ...item,
+        personas: Math.max(0, Math.round(Number(item?.personas ?? 0) * share)),
+      }))
+    : []
+  const sorted = [...detalle].sort((a, b) => b.personas - a.personas)
+  const fallbackTop = entry.top
+    ? {
+        plan_id: entry.top.plan_id,
+        plan_nombre: entry.top.plan_nombre,
+        personas: Math.max(0, Math.round(Number(entry.top.personas ?? 0) * share)),
+      }
+    : null
+  const fallbackBottom = entry.bottom
+    ? {
+        plan_id: entry.bottom.plan_id,
+        plan_nombre: entry.bottom.plan_nombre,
+        personas: Math.max(0, Math.round(Number(entry.bottom.personas ?? 0) * share)),
+      }
+    : null
+  const topSource = sorted[0] ?? fallbackTop
+  const bottomSource = sorted.length ? sorted[sorted.length - 1] : fallbackBottom
+  return {
+    ...entry,
+    detalle,
+    top: topSource
+      ? {
+          plan_id: topSource.plan_id,
+          plan_nombre: topSource.plan_nombre,
+          personas: topSource.personas,
+        }
+      : null,
+    bottom: bottomSource
+      ? {
+          plan_id: bottomSource.plan_id,
+          plan_nombre: bottomSource.plan_nombre,
+          personas: bottomSource.personas,
+        }
+      : null,
+  }
+}
+
+function filterPersonalData(snapshot, allowedBranchIds = new Set(), targetBranchId = null) {
+  const allowed = new Set(Array.from(allowedBranchIds).map((value) => Number(value)))
+  if (!snapshot.personalEnGimnasio) snapshot.personalEnGimnasio = { sucursales: [], snapshots: [] }
+  if (!Array.isArray(snapshot.personalEnGimnasio.sucursales)) {
+    snapshot.personalEnGimnasio.sucursales = []
+  }
+  if (!Array.isArray(snapshot.personalEnGimnasio.snapshots)) {
+    snapshot.personalEnGimnasio.snapshots = []
+  }
+  snapshot.personalEnGimnasio.sucursales = snapshot.personalEnGimnasio.sucursales.filter((item) =>
+    allowed.has(Number(item.id)),
+  )
+  snapshot.personalEnGimnasio.snapshots = snapshot.personalEnGimnasio.snapshots.filter((item) =>
+    allowed.has(Number(item.sucursal_id)),
+  )
+
+  if (!snapshot.personalPorHora) snapshot.personalPorHora = { series: [] }
+  if (!Array.isArray(snapshot.personalPorHora.series)) snapshot.personalPorHora.series = []
+  snapshot.personalPorHora.series = snapshot.personalPorHora.series.filter((serie) =>
+    allowed.has(Number(serie.sucursal_id)),
+  )
+
+  if (targetBranchId != null) {
+    const target = Number(targetBranchId)
+    snapshot.personalEnGimnasio.snapshots = snapshot.personalEnGimnasio.snapshots.filter(
+      (item) => Number(item.sucursal_id) === target,
+    )
+    snapshot.personalPorHora.series = snapshot.personalPorHora.series.filter(
+      (serie) => Number(serie.sucursal_id) === target,
+    )
+  }
+}
+
+export function buildDashboardSnapshot({ empresaId, sucursalId } = {}) {
+  const base = deepClone(dashboardRawMock)
+  const metadata = base.metadata || {}
+  const allEmpresas = Array.isArray(metadata.empresas) ? metadata.empresas : []
+  const allSucursales = Array.isArray(metadata.sucursales) ? metadata.sucursales : []
+  const defaultEmpresaId = metadata.defaultEmpresaId ?? allEmpresas[0]?.id ?? null
+  const targetEmpresaId = empresaId ?? defaultEmpresaId
+  const empresa = allEmpresas.find((item) => item.id === targetEmpresaId)
+
+  if (!empresa) {
+    return {
+      metadata: {
+        months: metadata.months ?? [],
+        currentMonth: metadata.currentMonth ?? null,
+        defaultEmpresaId: targetEmpresaId,
+        defaultSucursalId: null,
+        empresas: empresaId ? allEmpresas.filter((item) => item.id === empresaId) : [],
+        sucursales: [],
+      },
+      ingresosVsGastos: [],
+      variacionIngresos: [],
+      estadoMembresias: { cortes: [] },
+      pagosAlDia: { cortes: [] },
+      personalEnGimnasio: { sucursales: [], snapshots: [] },
+      personalPorHora: { series: [] },
+      planesRanking: { series: [] },
+      inscripcionesMensuales: [],
+      bajasMensuales: [],
+    }
+  }
+
+  base.metadata.empresas = [empresa]
+  base.metadata.defaultEmpresaId = empresa.id
+
+  const companyBranches = allSucursales.filter((branch) => branch.empresa_id === empresa.id)
+  base.metadata.sucursales = companyBranches
+  if (!companyBranches.some((branch) => branch.id === base.metadata.defaultSucursalId)) {
+    base.metadata.defaultSucursalId = companyBranches[0]?.id ?? null
+  }
+
+  const allowedBranchIds = new Set(companyBranches.map((branch) => Number(branch.id)))
+  filterPersonalData(base, allowedBranchIds, sucursalId != null ? Number(sucursalId) : null)
+  base.personalEnGimnasio.sucursales = companyBranches
+
+  if (sucursalId == null) {
+    return base
+  }
+
+  const branchId = Number(sucursalId)
+  if (!companyBranches.some((item) => Number(item.id) === branchId)) {
+    return base
+  }
+
+  base.metadata.defaultSucursalId = branchId
+
+  const share = BRANCH_SHARE_MAP[branchId] ?? 0.5
+
+  base.ingresosVsGastos = scaleSeries(base.ingresosVsGastos, share, {
+    ingresos: { decimals: 2, min: 0 },
+    gastos: { decimals: 2, min: 0 },
+  })
+  base.variacionIngresos = scaleSeries(base.variacionIngresos, share, {
+    total: { decimals: 2, min: 0 },
+  })
+  if (base.estadoMembresias?.cortes) {
+    base.estadoMembresias.cortes = scaleSeries(base.estadoMembresias.cortes, share, {
+      activos: { decimals: 0, min: 0 },
+      cancelados: { decimals: 0, min: 0 },
+      suspendidos: { decimals: 0, min: 0 },
+    })
+  }
+  if (base.pagosAlDia?.cortes) {
+    base.pagosAlDia.cortes = scaleSeries(base.pagosAlDia.cortes, share, {
+      activos_totales: { decimals: 0, min: 0 },
+      activos_al_corriente: { decimals: 0, min: 0 },
+      __after(result) {
+        if (result.activos_al_corriente > result.activos_totales) {
+          result.activos_al_corriente = result.activos_totales
+        }
+        return result
+      },
+    })
+  }
+  if (base.planesRanking?.series) {
+    base.planesRanking.series = base.planesRanking.series.map((serie) => scalePlanRanking(serie, share))
+  }
+  base.inscripcionesMensuales = scaleSeries(base.inscripcionesMensuales, share, {
+    altas: { decimals: 0, min: 0 },
+  })
+  base.bajasMensuales = scaleSeries(base.bajasMensuales, share, {
+    bajas: { decimals: 0, min: 0 },
+  })
+
+  return base
+}
+
+export const dashboardMock = buildDashboardSnapshot()
+
 export function createFilterOptions(data = dashboardMock) {
   const source = data || dashboardMock
   const metadataMonths = source?.metadata?.months ?? []
@@ -2838,7 +3070,10 @@ export function createFilterOptions(data = dashboardMock) {
     ...cortesPagos.map((item) => item.corte),
   ]).map((date) => ({ value: date, label: formatDateLabel(date) }))
 
-  const sucursales = source?.personalEnGimnasio?.sucursales ?? []
+  const sucursales =
+    (source?.personalEnGimnasio?.sucursales && source.personalEnGimnasio.sucursales.length
+      ? source.personalEnGimnasio.sucursales
+      : source?.metadata?.sucursales) ?? []
   const personalSucursales = [
     { value: 'all', label: 'Todas las sucursales' },
     ...sucursales
