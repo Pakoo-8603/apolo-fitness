@@ -31,24 +31,54 @@
           </div>
         </header>
 
-        <section class="kpi-grid" :class="{ editing: isEditing }" :style="gridStyle">
+        <section
+          ref="gridRef"
+          class="kpi-grid"
+          :class="{ editing: isEditing }"
+          :style="gridStyle"
+        >
           <article
             v-for="module in renderedModules"
             :key="module.id"
             class="kpi-card"
-            :class="{ 'is-hidden': isEditing && !module.layout.visible }"
+            :class="{
+              'is-hidden': isEditing && !module.layout.visible,
+              'is-dragging': draggingId === module.id,
+              'is-drop-target': dragOverId === module.id,
+              editing: isEditing,
+            }"
             :style="[cardStyle, moduleGridStyle(module.layout)]"
+            :draggable="isEditing"
+            @dragstart="handleDragStart(module.id, $event)"
+            @dragenter="handleDragEnter(module.id)"
+            @dragover="handleDragOver(module.id, $event)"
+            @drop="handleDrop(module.id, $event)"
+            @dragend="handleDragEnd"
           >
             <header class="kpi-card__head" :style="{ borderColor }">
-              <div>
+              <div class="kpi-card__title-wrap">
+                <button v-if="isEditing" class="drag-handle" type="button" title="Mover KPI">
+                  <i class="fa-solid fa-grip-dots"></i>
+                </button>
                 <h3 class="kpi-card__title">{{ module.title }}</h3>
                 <p class="kpi-card__subtitle" :style="{ color: subtext }">
                   {{ module.subtitle }}
                 </p>
               </div>
               <button
-                v-if="!isEditing"
+                v-if="isEditing"
+                class="icon-btn icon-btn--ghost"
+                type="button"
+                :style="iconBtnStyle"
+                :title="module.layout.visible ? 'Ocultar KPI' : 'Mostrar KPI'"
+                @click.stop="toggleVisibility(module.id)"
+              >
+                <i :class="module.layout.visible ? 'fa-regular fa-eye' : 'fa-regular fa-eye-slash'"></i>
+              </button>
+              <button
+                v-else
                 class="icon-btn"
+                type="button"
                 :style="iconBtnStyle"
                 title="Actualizar KPI"
                 @click="refreshModule(module.id)"
@@ -116,57 +146,28 @@
               </div>
             </div>
 
-            <div v-if="isEditing" class="layout-controls" :style="{ borderColor }">
-              <button
-                class="layout-btn"
-                @click="adjustSpan(module.id, 'colSpan', -1)"
-                :disabled="module.layout.colSpan <= 1"
-              >
-                − ancho
-              </button>
-              <button
-                class="layout-btn"
-                @click="adjustSpan(module.id, 'colSpan', 1)"
-                :disabled="module.layout.colSpan >= MAX_SPAN"
-              >
-                + ancho
-              </button>
-              <button
-                class="layout-btn"
-                @click="adjustSpan(module.id, 'rowSpan', -1)"
-                :disabled="module.layout.rowSpan <= 1"
-              >
-                − alto
-              </button>
-              <button
-                class="layout-btn"
-                @click="adjustSpan(module.id, 'rowSpan', 1)"
-                :disabled="module.layout.rowSpan >= MAX_SPAN"
-              >
-                + alto
-              </button>
-              <button
-                class="layout-btn"
-                @click="moveModule(module.id, 'up')"
-                :disabled="module.layout.order === firstOrder"
-              >
-                ▲
-              </button>
-              <button
-                class="layout-btn"
-                @click="moveModule(module.id, 'down')"
-                :disabled="module.layout.order === lastOrder"
-              >
-                ▼
-              </button>
-              <button class="layout-btn" @click="toggleVisibility(module.id)">
-                {{ module.layout.visible ? 'Ocultar' : 'Mostrar' }}
-              </button>
-            </div>
-
             <div v-if="isEditing && !module.layout.visible" class="hidden-overlay">
               <span>Oculto</span>
             </div>
+
+            <div
+              v-if="isEditing"
+              class="resize-handle resize-handle--right"
+              title="Ajustar ancho"
+              @pointerdown.prevent.stop="handleResizeStart(module.id, 'horizontal', $event)"
+            ></div>
+            <div
+              v-if="isEditing"
+              class="resize-handle resize-handle--bottom"
+              title="Ajustar alto"
+              @pointerdown.prevent.stop="handleResizeStart(module.id, 'vertical', $event)"
+            ></div>
+            <div
+              v-if="isEditing"
+              class="resize-handle resize-handle--corner"
+              title="Ajustar tamaño"
+              @pointerdown.prevent.stop="handleResizeStart(module.id, 'both', $event)"
+            ></div>
           </article>
         </section>
 
@@ -311,7 +312,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -332,6 +333,7 @@ import {
 } from '@/data/dashboard'
 
 const GRID_COLUMNS = 6
+const ROW_HEIGHT = 170
 const MAX_SPAN = 3
 const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v2'
 const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
@@ -408,6 +410,18 @@ const isEditing = ref(false)
 const filters = reactive(loadFilters())
 const layoutState = ref(loadLayout())
 const filterOptionsState = reactive(cloneDeep(initialFilterOptions))
+const gridRef = ref(null)
+const columnWidth = ref(0)
+const draggingId = ref(null)
+const dragOverId = ref(null)
+const resizingState = reactive({
+  id: null,
+  mode: null,
+  startX: 0,
+  startY: 0,
+  startColSpan: 1,
+  startRowSpan: 1,
+})
 
 ensureFiltersStructure()
 
@@ -415,7 +429,7 @@ const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
 
 const gridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
-  gridAutoRows: 'minmax(160px, auto)',
+  gridAutoRows: `${ROW_HEIGHT}px`,
 }))
 
 const cardStyle = computed(() => ({
@@ -431,8 +445,6 @@ const editBtnStyle = computed(() => ({
 }))
 
 const layoutOrdered = computed(() => [...layoutState.value].sort((a, b) => a.order - b.order))
-const firstOrder = computed(() => layoutOrdered.value[0]?.order ?? 1)
-const lastOrder = computed(() => layoutOrdered.value[layoutOrdered.value.length - 1]?.order ?? layoutOrdered.value.length)
 const hiddenModules = computed(() => layoutState.value.filter((item) => !item.visible))
 
 const renderedModules = computed(() => {
@@ -481,6 +493,15 @@ watch(
 )
 
 watch(
+  layoutState,
+  () => {
+    if (!isEditing.value) return
+    nextTick(updateGridMetrics)
+  },
+  { deep: true },
+)
+
+watch(
   filters,
   (value) => {
     if (typeof window === 'undefined') return
@@ -495,35 +516,13 @@ watch(
 
 function toggleEdit() {
   isEditing.value = !isEditing.value
+  if (isEditing.value) {
+    nextTick(updateGridMetrics)
+  }
 }
 
 function refreshModule() {
   loadDashboard()
-}
-
-function adjustSpan(id, field, delta) {
-  const entry = layoutState.value.find((item) => item.id === id)
-  if (!entry) return
-  if (!['colSpan', 'rowSpan'].includes(field)) return
-  const next = Math.min(MAX_SPAN, Math.max(1, Math.round((entry[field] || 1) + delta)))
-  entry[field] = next
-}
-
-function moveModule(id, direction) {
-  const sorted = [...layoutOrdered.value]
-  const index = sorted.findIndex((item) => item.id === id)
-  if (index === -1) return
-  const targetIndex = direction === 'up' ? index - 1 : index + 1
-  if (targetIndex < 0 || targetIndex >= sorted.length) return
-  const current = sorted[index]
-  const target = sorted[targetIndex]
-  const currentOrder = current.order
-  current.order = target.order
-  target.order = currentOrder
-  for (const entry of sorted) {
-    const original = layoutState.value.find((item) => item.id === entry.id)
-    if (original) original.order = entry.order
-  }
 }
 
 function toggleVisibility(id) {
@@ -540,12 +539,144 @@ function resetLayout() {
 }
 
 function moduleGridStyle(layout) {
-  const colSpan = Math.min(layout?.colSpan ?? 1, GRID_COLUMNS)
-  const rowSpan = Math.min(layout?.rowSpan ?? 1, MAX_SPAN)
+  const colSpan = clamp(layout?.colSpan ?? 1, 1, Math.min(GRID_COLUMNS, MAX_SPAN))
+  const rowSpan = clamp(layout?.rowSpan ?? 1, 1, MAX_SPAN)
   return {
     gridColumn: `span ${colSpan}`,
     gridRow: `span ${rowSpan}`,
   }
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function updateGridMetrics() {
+  if (typeof window === 'undefined') return
+  const el = gridRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  columnWidth.value = rect.width > 0 ? rect.width / GRID_COLUMNS : 0
+}
+
+function reorderLayout(sourceId, targetId) {
+  if (!sourceId || !targetId || sourceId === targetId) return
+  const sorted = [...layoutOrdered.value]
+  const sourceIndex = sorted.findIndex((item) => item.id === sourceId)
+  const targetIndex = sorted.findIndex((item) => item.id === targetId)
+  if (sourceIndex === -1 || targetIndex === -1) return
+  const [moved] = sorted.splice(sourceIndex, 1)
+  sorted.splice(targetIndex, 0, moved)
+  sorted.forEach((entry, index) => {
+    const original = layoutState.value.find((item) => item.id === entry.id)
+    if (original) original.order = index + 1
+  })
+}
+
+function handleDragStart(id, event) {
+  if (!isEditing.value) {
+    event.preventDefault()
+    return
+  }
+  const target = event.target
+  const getClosest = (selector) =>
+    target && typeof target === 'object' && 'closest' in target && typeof target.closest === 'function'
+      ? target.closest(selector)
+      : null
+  const blocked = getClosest('select, input, textarea, button:not(.drag-handle), a')
+  if (blocked) {
+    event.preventDefault()
+    return
+  }
+  const draggableZone = getClosest('.drag-handle, .kpi-card__head')
+  if (!draggableZone) {
+    event.preventDefault()
+    return
+  }
+  draggingId.value = id
+  dragOverId.value = id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(id))
+  }
+}
+
+function handleDragEnter(id) {
+  if (!isEditing.value || draggingId.value == null) return
+  if (draggingId.value === id) return
+  dragOverId.value = id
+}
+
+function handleDragOver(id, event) {
+  if (!isEditing.value || draggingId.value == null) return
+  event.preventDefault()
+  if (dragOverId.value !== id && draggingId.value !== id) {
+    dragOverId.value = id
+  }
+}
+
+function handleDrop(id, event) {
+  if (!isEditing.value || draggingId.value == null) return
+  event.preventDefault()
+  if (draggingId.value !== id) {
+    reorderLayout(draggingId.value, id)
+  }
+  draggingId.value = null
+  dragOverId.value = null
+}
+
+function handleDragEnd() {
+  draggingId.value = null
+  dragOverId.value = null
+}
+
+function detachResizeListeners() {
+  if (typeof window === 'undefined') return
+  window.removeEventListener('pointermove', handleResizeMove)
+  window.removeEventListener('pointerup', handleResizeEnd)
+}
+
+function handleResizeStart(id, mode, event) {
+  if (!isEditing.value) return
+  updateGridMetrics()
+  const entry = layoutState.value.find((item) => item.id === id)
+  if (!entry) return
+  detachResizeListeners()
+  resizingState.id = id
+  resizingState.mode = mode
+  resizingState.startX = event.clientX
+  resizingState.startY = event.clientY
+  resizingState.startColSpan = entry.colSpan
+  resizingState.startRowSpan = entry.rowSpan
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointermove', handleResizeMove)
+    window.addEventListener('pointerup', handleResizeEnd)
+  }
+}
+
+function handleResizeMove(event) {
+  if (!resizingState.id) return
+  const entry = layoutState.value.find((item) => item.id === resizingState.id)
+  if (!entry) return
+  if (resizingState.mode === 'horizontal' || resizingState.mode === 'both') {
+    const deltaX = event.clientX - resizingState.startX
+    const colSize = columnWidth.value || 1
+    const diffCols = Math.round(deltaX / colSize)
+    entry.colSpan = clamp(resizingState.startColSpan + diffCols, 1, MAX_SPAN)
+  }
+  if (resizingState.mode === 'vertical' || resizingState.mode === 'both') {
+    const deltaY = event.clientY - resizingState.startY
+    const diffRows = Math.round(deltaY / ROW_HEIGHT)
+    entry.rowSpan = clamp(resizingState.startRowSpan + diffRows, 1, MAX_SPAN)
+  }
+}
+
+function handleResizeEnd() {
+  resizingState.id = null
+  resizingState.mode = null
+  resizingState.startColSpan = 1
+  resizingState.startRowSpan = 1
+  detachResizeListeners()
 }
 
 function normalizeLayout(entries) {
@@ -1002,9 +1133,21 @@ async function loadDashboard() {
 }
 
 onMounted(async () => {
+  await nextTick()
+  updateGridMetrics()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', updateGridMetrics)
+  }
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
   await loadDashboard()
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', updateGridMetrics)
+  }
+  detachResizeListeners()
 })
 
 const modalCliente = ref(false)
@@ -1139,12 +1282,34 @@ function cobrar(c) {
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
 }
 
+.kpi-card.is-dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+.kpi-card.is-drop-target:not(.is-dragging) {
+  outline: 2px dashed color-mix(in srgb, v-bind(primary) 50%, transparent);
+  outline-offset: 4px;
+}
+
 .kpi-card.is-hidden {
   opacity: 0.55;
 }
 
 .kpi-card__head {
   @apply flex items-start justify-between gap-4 px-5 py-4 border-b;
+}
+
+.kpi-card.editing .kpi-card__head {
+  cursor: grab;
+}
+
+.kpi-card.editing .kpi-card__head:active {
+  cursor: grabbing;
+}
+
+.kpi-card__title-wrap {
+  @apply flex items-start gap-3;
 }
 
 .kpi-card__title {
@@ -1211,12 +1376,23 @@ function cobrar(c) {
   @apply text-sm italic;
 }
 
-.layout-controls {
-  @apply flex flex-wrap gap-2 px-5 py-3 border-t;
+
+.drag-handle {
+  @apply flex items-center justify-center rounded-full text-base;
+  width: 32px;
+  height: 32px;
+  border: 1px dashed color-mix(in srgb, v-bind(primary) 40%, transparent);
+  color: v-bind('subtext');
+  cursor: grab;
+  flex-shrink: 0;
 }
 
-.layout-btn {
-  @apply rounded-lg border px-3 py-1 text-xs font-semibold uppercase tracking-wide;
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.icon-btn--ghost {
+  background: color-mix(in srgb, v-bind('theme.cardBg') 70%, transparent);
 }
 
 .hidden-overlay {
@@ -1229,6 +1405,41 @@ function cobrar(c) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: color-mix(in srgb, v-bind(primary) 20%, transparent);
+  border: 1px solid color-mix(in srgb, v-bind(primary) 55%, transparent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.resize-handle--right {
+  top: 50%;
+  right: -8px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+
+.resize-handle--bottom {
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+
+.resize-handle--corner {
+  right: -8px;
+  bottom: -8px;
+  cursor: nwse-resize;
 }
 
 .hidden-summary {
