@@ -31,144 +31,142 @@
           </div>
         </header>
 
-        <section
-          ref="gridRef"
-          class="kpi-grid"
-          :class="{ editing: isEditing }"
-          :style="gridStyle"
-        >
-          <article
-            v-for="module in renderedModules"
-            :key="module.id"
-            class="kpi-card"
-            :class="{
-              'is-hidden': isEditing && !module.layout.visible,
-              'is-dragging': draggingId === module.id,
-              'is-drop-target': dragOverId === module.id,
-              editing: isEditing,
-            }"
-            :style="[cardStyle, moduleGridStyle(module.layout)]"
-            :draggable="isEditing"
-            @dragstart="handleDragStart(module.id, $event)"
-            @dragenter="handleDragEnter(module.id)"
-            @dragover="handleDragOver(module.id, $event)"
-            @drop="handleDrop(module.id, $event)"
-            @dragend="handleDragEnd"
-          >
-            <header class="kpi-card__head" :style="{ borderColor }">
-              <div class="kpi-card__title-wrap">
-                <button v-if="isEditing" class="drag-handle" type="button" title="Mover KPI">
-                  <i class="fa-solid fa-grip-dots"></i>
-                </button>
-                <h3 class="kpi-card__title">{{ module.title }}</h3>
-                <p class="kpi-card__subtitle" :style="{ color: subtext }">
-                  {{ module.subtitle }}
-                </p>
-              </div>
-              <button
-                v-if="isEditing"
-                class="icon-btn icon-btn--ghost"
-                type="button"
-                :style="iconBtnStyle"
-                :title="module.layout.visible ? 'Ocultar KPI' : 'Mostrar KPI'"
-                @click.stop="toggleVisibility(module.id)"
-              >
-                <i :class="module.layout.visible ? 'fa-regular fa-eye' : 'fa-regular fa-eye-slash'"></i>
-              </button>
-              <button
-                v-else
-                class="icon-btn"
-                type="button"
-                :style="iconBtnStyle"
-                title="Actualizar KPI"
-                @click="refreshModule(module.id)"
-              >
-                ⟳
-              </button>
-            </header>
-
-            <div v-if="module.filters?.length" class="kpi-card__filters">
+        <section class="gridstack-wrapper" :class="{ editing: isEditing }">
+          <div ref="gridRef" class="grid-stack">
+            <div
+              v-for="module in renderedModules"
+              :key="module.id"
+              class="grid-stack-item"
+              :data-gs-id="module.id"
+              :data-gs-w="module.layout.w"
+              :data-gs-h="module.layout.h"
+              :data-gs-x="module.layout.x"
+              :data-gs-y="module.layout.y"
+              data-gs-auto-position="true"
+            >
               <div
-                v-for="filterDef in module.filters"
-                :key="`${module.id}-${filterDef.key}`"
-                class="field-inline"
+                class="grid-stack-item-content kpi-card"
+                :class="{ editing: isEditing }"
+                :style="cardStyle"
+                @mouseleave="onModuleLeave(module.id)"
               >
-                <label class="field-label" :style="{ color: subtext }">
-                  {{ filterDef.label }}
-                </label>
-                <select
-                  v-model="filters[module.id][filterDef.key]"
-                  class="field-select"
-                  :style="selectStyle"
-                >
-                  <option
-                    v-for="opt in filterOptionsState[filterDef.optionsKey] || []"
-                    :key="`${module.id}-${filterDef.key}-${opt.value}`"
-                    :value="opt.value"
+                <header class="kpi-card__head" :style="{ borderColor }">
+                  <div class="kpi-card__title-wrap">
+                    <button v-if="isEditing" class="drag-handle" type="button" title="Mover KPI">
+                      <i class="fa-solid fa-grip-dots"></i>
+                    </button>
+                    <div>
+                      <h3 class="kpi-card__title">{{ module.title }}</h3>
+                      <p class="kpi-card__subtitle" :style="{ color: subtext }">
+                        {{ module.subtitle }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="kpi-card__actions">
+                    <button
+                      v-if="module.filters?.length"
+                      class="icon-btn filter-toggle"
+                      type="button"
+                      :style="iconBtnStyle"
+                      :class="{ 'is-active': activeFilterPanel === module.id }"
+                      title="Ajustar filtros"
+                      @click.stop="toggleFilterPanel(module.id)"
+                    >
+                      <i class="fa-solid fa-sliders"></i>
+                    </button>
+                    <button
+                      v-if="isEditing"
+                      class="icon-btn eye-btn"
+                      type="button"
+                      :style="iconBtnStyle"
+                      title="Ocultar KPI"
+                      @click.stop="toggleVisibility(module.id)"
+                    >
+                      <i class="fa-regular fa-eye"></i>
+                    </button>
+                    <button
+                      v-else
+                      class="icon-btn refresh-btn"
+                      type="button"
+                      :style="iconBtnStyle"
+                      title="Actualizar KPI"
+                      @click="refreshModule(module.id)"
+                    >
+                      ⟳
+                    </button>
+                  </div>
+                </header>
+
+                <transition name="fade">
+                  <div
+                    v-if="module.filters?.length && activeFilterPanel === module.id"
+                    class="kpi-card__filters floating"
+                    @mouseenter="cancelFilterHide"
+                    @mouseleave="scheduleFilterHide"
                   >
-                    {{ opt.label }}
-                  </option>
-                </select>
-              </div>
-            </div>
+                    <div
+                      v-for="filterDef in module.filters"
+                      :key="`${module.id}-${filterDef.key}`"
+                      class="field-inline"
+                    >
+                      <label class="field-label" :style="{ color: subtext }">
+                        {{ filterDef.label }}
+                      </label>
+                      <select
+                        v-model="filters[module.id][filterDef.key]"
+                        class="field-select"
+                        :style="selectStyle"
+                        @change="handleFilterInteraction(module.id)"
+                        @blur="scheduleFilterHide"
+                      >
+                        <option
+                          v-for="opt in filterOptionsState[filterDef.optionsKey] || []"
+                          :key="`${module.id}-${filterDef.key}-${opt.value}`"
+                          :value="opt.value"
+                        >
+                          {{ opt.label }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </transition>
 
-            <div class="kpi-card__body">
-              <p
-                v-if="moduleOutputs[module.id]?.context"
-                class="kpi-card__context"
-                :style="{ color: subtext }"
-              >
-                {{ moduleOutputs[module.id].context }}
-              </p>
-
-              <div class="metric-grid">
-                <div
-                  v-for="metric in moduleOutputs[module.id]?.metrics || []"
-                  :key="metric.id || `${module.id}-${metric.label}`"
-                  class="metric-block"
-                >
-                  <span class="metric-label" :style="{ color: subtext }">
-                    {{ metric.label }}
-                  </span>
-                  <span class="metric-value">{{ metric.value }}</span>
-                  <span
-                    v-if="metric.caption"
-                    class="metric-caption"
+                <div class="kpi-card__body">
+                  <p
+                    v-if="moduleOutputs[module.id]?.context"
+                    class="kpi-card__context"
                     :style="{ color: subtext }"
                   >
-                    {{ metric.caption }}
-                  </span>
+                    {{ moduleOutputs[module.id].context }}
+                  </p>
+
+                  <div class="metric-grid">
+                    <div
+                      v-for="metric in moduleOutputs[module.id]?.metrics || []"
+                      :key="metric.id || `${module.id}-${metric.label}`"
+                      class="metric-block"
+                    >
+                      <span class="metric-label" :style="{ color: subtext }">
+                        {{ metric.label }}
+                      </span>
+                      <span class="metric-value">{{ metric.value }}</span>
+                      <span
+                        v-if="metric.caption"
+                        class="metric-caption"
+                        :style="{ color: subtext }"
+                      >
+                        {{ metric.caption }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div v-if="loadingDashboard" class="kpi-loading" :style="{ color: subtext }">
+                    Cargando…
+                  </div>
                 </div>
               </div>
-
-              <div v-if="loadingDashboard" class="kpi-loading" :style="{ color: subtext }">
-                Cargando…
-              </div>
             </div>
-
-            <div v-if="isEditing && !module.layout.visible" class="hidden-overlay">
-              <span>Oculto</span>
-            </div>
-
-            <div
-              v-if="isEditing"
-              class="resize-handle resize-handle--right"
-              title="Ajustar ancho"
-              @pointerdown.prevent.stop="handleResizeStart(module.id, 'horizontal', $event)"
-            ></div>
-            <div
-              v-if="isEditing"
-              class="resize-handle resize-handle--bottom"
-              title="Ajustar alto"
-              @pointerdown.prevent.stop="handleResizeStart(module.id, 'vertical', $event)"
-            ></div>
-            <div
-              v-if="isEditing"
-              class="resize-handle resize-handle--corner"
-              title="Ajustar tamaño"
-              @pointerdown.prevent.stop="handleResizeStart(module.id, 'both', $event)"
-            ></div>
-          </article>
+          </div>
         </section>
 
         <div
@@ -176,7 +174,17 @@
           class="hidden-summary"
           :style="{ color: subtext }"
         >
-          {{ hiddenModules.length }} KPI ocult{{ hiddenModules.length === 1 ? 'o' : 'os' }} en este tablero.
+          <span class="hidden-summary__title">KPI ocultos</span>
+          <button
+            v-for="item in hiddenModules"
+            :key="`hidden-${item.id}`"
+            type="button"
+            class="hidden-chip"
+            :style="{ borderColor, background: chipBg, color: chipText }"
+            @click="restoreModule(item.id)"
+          >
+            {{ moduleMap.get(item.id)?.title || item.id }}
+          </button>
         </div>
 
         <div class="text-right">
@@ -331,11 +339,15 @@ import {
   formatDateLabel,
   formatMonthLabel,
 } from '@/data/dashboard'
+import { GridStack } from 'gridstack'
+import 'gridstack/dist/gridstack.min.css'
 
 const GRID_COLUMNS = 6
 const ROW_HEIGHT = 170
-const MAX_SPAN = 3
-const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v2'
+const MAX_COL_SPAN = 3
+const MAX_ROW_SPAN = 3
+const GRID_MARGIN = 16
+const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v3'
 const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
 const router = useRouter()
@@ -411,26 +423,16 @@ const filters = reactive(loadFilters())
 const layoutState = ref(loadLayout())
 const filterOptionsState = reactive(cloneDeep(initialFilterOptions))
 const gridRef = ref(null)
-const columnWidth = ref(0)
-const draggingId = ref(null)
-const dragOverId = ref(null)
-const resizingState = reactive({
-  id: null,
-  mode: null,
-  startX: 0,
-  startY: 0,
-  startColSpan: 1,
-  startRowSpan: 1,
-})
+const gridInstance = ref(null)
+const activeFilterPanel = ref(null)
+
+let filterHideTimer = null
+let pendingGridRefresh = false
+let suppressGridSync = false
 
 ensureFiltersStructure()
 
 const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
-
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))`,
-  gridAutoRows: `${ROW_HEIGHT}px`,
-}))
 
 const cardStyle = computed(() => ({
   background: theme.value.cardBg,
@@ -450,7 +452,7 @@ const hiddenModules = computed(() => layoutState.value.filter((item) => !item.vi
 const renderedModules = computed(() => {
   const modules = []
   for (const entry of layoutOrdered.value) {
-    if (!isEditing.value && !entry.visible) continue
+    if (!entry.visible) continue
     const meta = moduleMap.get(entry.id)
     if (!meta) continue
     if (!filters[entry.id]) filters[entry.id] = { ...defaultFilters[entry.id] }
@@ -493,15 +495,6 @@ watch(
 )
 
 watch(
-  layoutState,
-  () => {
-    if (!isEditing.value) return
-    nextTick(updateGridMetrics)
-  },
-  { deep: true },
-)
-
-watch(
   filters,
   (value) => {
     if (typeof window === 'undefined') return
@@ -514,10 +507,36 @@ watch(
   { deep: true },
 )
 
+watch(
+  layoutState,
+  () => {
+    if (suppressGridSync) return
+    scheduleGridSync()
+  },
+  { deep: true },
+)
+
+watch(
+  () => renderedModules.value.length,
+  () => {
+    queueGridRefresh()
+  },
+  { immediate: true },
+)
+
+watch(isEditing, (active) => {
+  if (gridInstance.value) {
+    gridInstance.value.setStatic(!active)
+  }
+  if (!active) {
+    activeFilterPanel.value = null
+  }
+})
+
 function toggleEdit() {
   isEditing.value = !isEditing.value
-  if (isEditing.value) {
-    nextTick(updateGridMetrics)
+  if (!isEditing.value) {
+    activeFilterPanel.value = null
   }
 }
 
@@ -527,7 +546,28 @@ function refreshModule() {
 
 function toggleVisibility(id) {
   const entry = layoutState.value.find((item) => item.id === id)
-  if (entry) entry.visible = !entry.visible
+  if (!entry) return
+  entry.visible = false
+  if (activeFilterPanel.value === id) {
+    activeFilterPanel.value = null
+  }
+  reflowLayout()
+  queueGridRefresh()
+}
+
+function restoreModule(id) {
+  const entry = layoutState.value.find((item) => item.id === id)
+  if (!entry) return
+  entry.visible = true
+  if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y)) {
+    const baseline = layoutState.value
+      .filter((item) => item.visible && item.id !== id)
+      .reduce((max, item) => Math.max(max, (item.y ?? 0) + item.h), 0)
+    entry.x = 0
+    entry.y = baseline
+  }
+  reflowLayout()
+  queueGridRefresh()
 }
 
 function resetLayout() {
@@ -536,165 +576,228 @@ function resetLayout() {
     filters[def.id] = { ...defaultFilters[def.id] }
   }
   ensureFiltersValid()
+  queueGridRefresh()
 }
 
-function moduleGridStyle(layout) {
-  const colSpan = clamp(layout?.colSpan ?? 1, 1, Math.min(GRID_COLUMNS, MAX_SPAN))
-  const rowSpan = clamp(layout?.rowSpan ?? 1, 1, MAX_SPAN)
-  return {
-    gridColumn: `span ${colSpan}`,
-    gridRow: `span ${rowSpan}`,
+async function queueGridRefresh() {
+  if (pendingGridRefresh) return
+  pendingGridRefresh = true
+  await nextTick()
+  pendingGridRefresh = false
+  await rebuildGrid()
+}
+
+function scheduleGridSync() {
+  if (!gridInstance.value) {
+    queueGridRefresh()
+    return
   }
+  nextTick(() => {
+    applyStateToGrid()
+  })
+}
+
+async function rebuildGrid() {
+  destroyGrid()
+  if (!renderedModules.value.length) return
+  await nextTick()
+  initGrid()
+}
+
+function reflowLayout() {
+  layoutState.value = placeItems(
+    layoutState.value.map((item, index) => ({
+      ...item,
+      order: index + 1,
+    })),
+  )
+}
+
+function initGrid() {
+  if (!gridRef.value) return
+  const grid = GridStack.init(
+    {
+      column: GRID_COLUMNS,
+      margin: GRID_MARGIN,
+      cellHeight: ROW_HEIGHT,
+      float: true,
+      disableOneColumnMode: false,
+      staticGrid: !isEditing.value,
+      draggable: { handle: '.drag-handle' },
+      resizable: { handles: 'se, e, s' },
+    },
+    gridRef.value,
+  )
+  gridInstance.value = grid
+  grid.on('change', handleGridChange)
+  applyStateToGrid()
+}
+
+function destroyGrid() {
+  if (!gridInstance.value) return
+  gridInstance.value.off('change', handleGridChange)
+  gridInstance.value.destroy(false)
+  gridInstance.value = null
+}
+
+function applyStateToGrid() {
+  const grid = gridInstance.value
+  if (!grid) return
+  grid.batchUpdate()
+  for (const entry of layoutState.value) {
+    if (!entry.visible) continue
+    const el = gridRef.value?.querySelector(`.grid-stack-item[data-gs-id="${entry.id}"]`)
+    if (!el) continue
+    const width = clamp(entry.w ?? entry.colSpan ?? 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+    const height = clamp(entry.h ?? entry.rowSpan ?? 1, 1, MAX_ROW_SPAN)
+    const x = clamp(entry.x ?? 0, 0, GRID_COLUMNS - width)
+    const y = Math.max(0, entry.y ?? 0)
+    grid.update(el, { x, y, w: width, h: height })
+  }
+  grid.commit()
+}
+
+function handleGridChange() {
+  const grid = gridInstance.value
+  if (!grid) return
+  const nodes = grid.engine?.nodes || []
+  suppressGridSync = true
+  layoutState.value.forEach((entry) => {
+    if (!entry.visible) return
+    const node = nodes.find((n) => {
+      const id = n.id ?? n.el?.dataset.gsId ?? n.el?.getAttribute('data-gs-id')
+      return String(id) === String(entry.id)
+    })
+    if (!node) return
+    entry.x = node.x
+    entry.y = node.y
+    entry.w = node.w
+    entry.h = node.h
+  })
+  const visible = layoutState.value
+    .filter((entry) => entry.visible)
+    .slice()
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x))
+  visible.forEach((entry, index) => {
+    entry.order = index + 1
+  })
+  const hidden = layoutState.value.filter((entry) => !entry.visible)
+  hidden.forEach((entry, index) => {
+    entry.order = visible.length + index + 1
+  })
+  nextTick(() => {
+    suppressGridSync = false
+  })
+}
+
+function toggleFilterPanel(id) {
+  if (activeFilterPanel.value === id) {
+    activeFilterPanel.value = null
+    return
+  }
+  cancelFilterHide()
+  activeFilterPanel.value = id
+}
+
+function scheduleFilterHide() {
+  cancelFilterHide()
+  if (!activeFilterPanel.value) return
+  filterHideTimer = setTimeout(() => {
+    activeFilterPanel.value = null
+  }, 220)
+}
+
+function cancelFilterHide() {
+  if (filterHideTimer) {
+    clearTimeout(filterHideTimer)
+    filterHideTimer = null
+  }
+}
+
+function handleFilterInteraction() {
+  scheduleFilterHide()
+}
+
+function onModuleLeave(id) {
+  if (activeFilterPanel.value === id) {
+    scheduleFilterHide()
+  }
+}
+
+function normalizeLayout(entries) {
+  const map = new Map((entries || []).map((item) => [item.id, item]))
+  const prepared = kpiDefinitions.map((def, index) => {
+    const saved = map.get(def.id) || {}
+    const baseCol = Math.round(saved.w ?? saved.colSpan ?? def.layout.colSpan ?? 1)
+    const baseRow = Math.round(saved.h ?? saved.rowSpan ?? def.layout.rowSpan ?? 1)
+    const w = clamp(baseCol, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+    const h = clamp(baseRow, 1, MAX_ROW_SPAN)
+    const orderValue = Number(saved.order)
+    const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
+    const visible = saved.visible !== false
+    const xValue = Number(saved.x)
+    const yValue = Number(saved.y)
+    const x = Number.isFinite(xValue) ? clamp(Math.round(xValue), 0, GRID_COLUMNS - w) : null
+    const y = Number.isFinite(yValue) ? Math.max(0, Math.round(yValue)) : null
+    return { id: def.id, w, h, order, visible, x, y }
+  })
+  return placeItems(prepared)
 }
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
-function updateGridMetrics() {
-  if (typeof window === 'undefined') return
-  const el = gridRef.value
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  columnWidth.value = rect.width > 0 ? rect.width / GRID_COLUMNS : 0
-}
+function placeItems(items) {
+  const visible = items.filter((item) => item.visible).sort((a, b) => a.order - b.order)
+  const hidden = items.filter((item) => !item.visible).sort((a, b) => a.order - b.order)
+  const result = []
+  const occupied = []
 
-function reorderLayout(sourceId, targetId) {
-  if (!sourceId || !targetId || sourceId === targetId) return
-  const sorted = [...layoutOrdered.value]
-  const sourceIndex = sorted.findIndex((item) => item.id === sourceId)
-  const targetIndex = sorted.findIndex((item) => item.id === targetId)
-  if (sourceIndex === -1 || targetIndex === -1) return
-  const [moved] = sorted.splice(sourceIndex, 1)
-  sorted.splice(targetIndex, 0, moved)
-  sorted.forEach((entry, index) => {
-    const original = layoutState.value.find((item) => item.id === entry.id)
-    if (original) original.order = index + 1
+  const placeGroup = (group) => {
+    for (const item of group) {
+      const w = clamp(item.w, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+      const h = clamp(item.h, 1, MAX_ROW_SPAN)
+      let x = item.x
+      let y = item.y
+      if (x == null || y == null || overlaps(x, y, w, h, occupied)) {
+        const spot = findSpot(w, h, occupied)
+        x = spot.x
+        y = spot.y
+      }
+      occupied.push({ x, y, w, h })
+      result.push({ ...item, w, h, x, y })
+    }
+  }
+
+  placeGroup(visible)
+  placeGroup(hidden)
+
+  result.sort((a, b) => a.order - b.order)
+  result.forEach((entry, index) => {
+    entry.order = index + 1
   })
+  return result
 }
 
-function handleDragStart(id, event) {
-  if (!isEditing.value) {
-    event.preventDefault()
-    return
-  }
-  const target = event.target
-  const getClosest = (selector) =>
-    target && typeof target === 'object' && 'closest' in target && typeof target.closest === 'function'
-      ? target.closest(selector)
-      : null
-  const blocked = getClosest('select, input, textarea, button:not(.drag-handle), a')
-  if (blocked) {
-    event.preventDefault()
-    return
-  }
-  const draggableZone = getClosest('.drag-handle, .kpi-card__head')
-  if (!draggableZone) {
-    event.preventDefault()
-    return
-  }
-  draggingId.value = id
-  dragOverId.value = id
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', String(id))
+function findSpot(w, h, occupied) {
+  let y = 0
+  while (true) {
+    for (let x = 0; x <= GRID_COLUMNS - w; x += 1) {
+      if (!overlaps(x, y, w, h, occupied)) {
+        return { x, y }
+      }
+    }
+    y += 1
   }
 }
 
-function handleDragEnter(id) {
-  if (!isEditing.value || draggingId.value == null) return
-  if (draggingId.value === id) return
-  dragOverId.value = id
-}
-
-function handleDragOver(id, event) {
-  if (!isEditing.value || draggingId.value == null) return
-  event.preventDefault()
-  if (dragOverId.value !== id && draggingId.value !== id) {
-    dragOverId.value = id
-  }
-}
-
-function handleDrop(id, event) {
-  if (!isEditing.value || draggingId.value == null) return
-  event.preventDefault()
-  if (draggingId.value !== id) {
-    reorderLayout(draggingId.value, id)
-  }
-  draggingId.value = null
-  dragOverId.value = null
-}
-
-function handleDragEnd() {
-  draggingId.value = null
-  dragOverId.value = null
-}
-
-function detachResizeListeners() {
-  if (typeof window === 'undefined') return
-  window.removeEventListener('pointermove', handleResizeMove)
-  window.removeEventListener('pointerup', handleResizeEnd)
-}
-
-function handleResizeStart(id, mode, event) {
-  if (!isEditing.value) return
-  updateGridMetrics()
-  const entry = layoutState.value.find((item) => item.id === id)
-  if (!entry) return
-  detachResizeListeners()
-  resizingState.id = id
-  resizingState.mode = mode
-  resizingState.startX = event.clientX
-  resizingState.startY = event.clientY
-  resizingState.startColSpan = entry.colSpan
-  resizingState.startRowSpan = entry.rowSpan
-  if (typeof window !== 'undefined') {
-    window.addEventListener('pointermove', handleResizeMove)
-    window.addEventListener('pointerup', handleResizeEnd)
-  }
-}
-
-function handleResizeMove(event) {
-  if (!resizingState.id) return
-  const entry = layoutState.value.find((item) => item.id === resizingState.id)
-  if (!entry) return
-  if (resizingState.mode === 'horizontal' || resizingState.mode === 'both') {
-    const deltaX = event.clientX - resizingState.startX
-    const colSize = columnWidth.value || 1
-    const diffCols = Math.round(deltaX / colSize)
-    entry.colSpan = clamp(resizingState.startColSpan + diffCols, 1, MAX_SPAN)
-  }
-  if (resizingState.mode === 'vertical' || resizingState.mode === 'both') {
-    const deltaY = event.clientY - resizingState.startY
-    const diffRows = Math.round(deltaY / ROW_HEIGHT)
-    entry.rowSpan = clamp(resizingState.startRowSpan + diffRows, 1, MAX_SPAN)
-  }
-}
-
-function handleResizeEnd() {
-  resizingState.id = null
-  resizingState.mode = null
-  resizingState.startColSpan = 1
-  resizingState.startRowSpan = 1
-  detachResizeListeners()
-}
-
-function normalizeLayout(entries) {
-  const map = new Map((entries || []).map((item) => [item.id, item]))
-  const normalized = kpiDefinitions.map((def, index) => {
-    const saved = map.get(def.id) || {}
-    const colSpan = Math.min(MAX_SPAN, Math.max(1, Math.round(saved.colSpan ?? def.layout.colSpan ?? 1)))
-    const rowSpan = Math.min(MAX_SPAN, Math.max(1, Math.round(saved.rowSpan ?? def.layout.rowSpan ?? 1)))
-    const orderValue = Number(saved.order)
-    const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
-    const visible = saved.visible !== false
-    return { id: def.id, colSpan, rowSpan, order, visible }
+function overlaps(x, y, w, h, nodes) {
+  return nodes.some((node) => {
+    const intersectsX = x < node.x + node.w && x + w > node.x
+    const intersectsY = y < node.y + node.h && y + h > node.y
+    return intersectsX && intersectsY
   })
-  normalized.sort((a, b) => a.order - b.order)
-  normalized.forEach((item, idx) => {
-    item.order = idx + 1
-  })
-  return normalized
 }
 
 function loadLayout() {
@@ -1134,20 +1237,15 @@ async function loadDashboard() {
 
 onMounted(async () => {
   await nextTick()
-  updateGridMetrics()
-  if (typeof window !== 'undefined') {
-    window.addEventListener('resize', updateGridMetrics)
-  }
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
   await loadDashboard()
+  await queueGridRefresh()
 })
 
 onBeforeUnmount(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('resize', updateGridMetrics)
-  }
-  detachResizeListeners()
+  destroyGrid()
+  cancelFilterHide()
 })
 
 const modalCliente = ref(false)
@@ -1268,32 +1366,35 @@ function cobrar(c) {
   box-shadow: 0 10px 26px rgba(26, 94, 255, 0.28);
 }
 
-.kpi-grid {
-  display: grid;
-  gap: 1.25rem;
+.gridstack-wrapper {
+  position: relative;
+}
+
+.gridstack-wrapper.editing .grid-stack-item-content {
+  cursor: grab;
+}
+
+.grid-stack {
+  min-height: 320px;
+}
+
+.grid-stack-item {
+  padding: 0 !important;
 }
 
 .kpi-card {
   position: relative;
   display: flex;
   flex-direction: column;
+  height: 100%;
   border-radius: 1.25rem;
   border: 1px solid transparent;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.kpi-card.is-dragging {
-  opacity: 0.6;
-  cursor: grabbing;
-}
-
-.kpi-card.is-drop-target:not(.is-dragging) {
-  outline: 2px dashed color-mix(in srgb, v-bind(primary) 50%, transparent);
-  outline-offset: 4px;
-}
-
-.kpi-card.is-hidden {
-  opacity: 0.55;
+.kpi-card:hover {
+  box-shadow: 0 22px 42px rgba(15, 23, 42, 0.08);
 }
 
 .kpi-card__head {
@@ -1320,8 +1421,35 @@ function cobrar(c) {
   @apply text-sm;
 }
 
+.kpi-card__actions {
+  @apply flex items-center gap-2;
+}
+
+.filter-toggle {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.filter-toggle.is-active,
+.kpi-card:hover .filter-toggle {
+  opacity: 1;
+}
+
 .kpi-card__filters {
-  @apply flex flex-wrap gap-4 px-5 pb-2 pt-4;
+  @apply flex flex-col gap-3;
+}
+
+.kpi-card__filters.floating {
+  position: absolute;
+  top: 64px;
+  right: 24px;
+  background: v-bind('theme.cardBg');
+  border: 1px solid v-bind('borderColor');
+  border-radius: 1rem;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
+  padding: 1rem;
+  min-width: 220px;
+  z-index: 20;
 }
 
 .field-inline {
@@ -1376,7 +1504,6 @@ function cobrar(c) {
   @apply text-sm italic;
 }
 
-
 .drag-handle {
   @apply flex items-center justify-center rounded-full text-base;
   width: 32px;
@@ -1391,59 +1518,38 @@ function cobrar(c) {
   cursor: grabbing;
 }
 
-.icon-btn--ghost {
-  background: color-mix(in srgb, v-bind('theme.cardBg') 70%, transparent);
+.icon-btn {
+  @apply h-9 w-9 rounded-xl grid place-items-center text-sm font-semibold;
+  border: 1px solid v-bind('borderColor');
+  background: transparent;
+  transition: filter 0.15s ease;
 }
 
-.hidden-overlay {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: rgba(15, 23, 42, 0.12);
-  display: grid;
-  place-items: center;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.resize-handle {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  background: color-mix(in srgb, v-bind(primary) 20%, transparent);
-  border: 1px solid color-mix(in srgb, v-bind(primary) 55%, transparent);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-}
-
-.resize-handle--right {
-  top: 50%;
-  right: -8px;
-  transform: translateY(-50%);
-  cursor: ew-resize;
-}
-
-.resize-handle--bottom {
-  bottom: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  cursor: ns-resize;
-}
-
-.resize-handle--corner {
-  right: -8px;
-  bottom: -8px;
-  cursor: nwse-resize;
+.icon-btn:hover {
+  filter: brightness(0.95);
 }
 
 .hidden-summary {
-  @apply text-sm font-medium text-right;
+  @apply flex flex-wrap items-center justify-end gap-3 text-sm pt-2;
+}
+
+.hidden-summary__title {
+  font-weight: 600;
+}
+
+.hidden-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 9999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8125rem;
+  border: 1px solid;
+  transition: filter 0.15s ease;
+}
+
+.hidden-chip:hover {
+  filter: brightness(0.95);
 }
 
 .link-theme {
@@ -1452,16 +1558,6 @@ function cobrar(c) {
 
 .link-theme:hover {
   text-decoration: underline;
-}
-
-.icon-btn {
-  @apply h-9 w-9 rounded-xl grid place-items-center text-sm font-semibold;
-  border: 1px solid v-bind('borderColor');
-  background: transparent;
-}
-
-.icon-btn:hover {
-  filter: brightness(0.95);
 }
 
 .fab {
@@ -1485,25 +1581,22 @@ function cobrar(c) {
   border-radius: 9999px;
 }
 
-@media (max-width: 1024px) {
-  .kpi-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-@media (max-width: 768px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 @media (max-width: 640px) {
-  .kpi-grid {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
-
-  .kpi-card__filters {
-    @apply flex-col;
+  .kpi-card__filters.floating {
+    left: 16px;
+    right: 16px;
+    width: auto;
   }
 
   .field-inline {
