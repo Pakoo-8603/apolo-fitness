@@ -333,10 +333,10 @@ import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 
 const GRID_COLUMNS = 6
-const ROW_HEIGHT = 120
+const ROW_HEIGHT = 108
 const MAX_COL_SPAN = 3
-const MAX_ROW_SPAN = 4
-const GRID_MARGIN = 12
+const MAX_ROW_SPAN = 6
+const GRID_MARGIN = 18
 const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v3'
 const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
@@ -602,7 +602,7 @@ function initGrid() {
   const grid = GridStack.init(
     {
       column: GRID_COLUMNS,
-      margin: GRID_MARGIN,
+      margin: `${GRID_MARGIN}px`,
       cellHeight: ROW_HEIGHT,
       float: false,
       disableOneColumnMode: false,
@@ -616,6 +616,8 @@ function initGrid() {
   grid.on('change', handleGridChange)
   grid.on('dragstop', handleGridChange)
   grid.on('resizestop', handleGridChange)
+  grid.on('dragstart', guardStaticInteraction)
+  grid.on('resizestart', guardStaticInteraction)
   applyStateToGrid()
   updateGridInteractivity()
 }
@@ -625,6 +627,8 @@ function destroyGrid() {
   gridInstance.value.off('change', handleGridChange)
   gridInstance.value.off('dragstop', handleGridChange)
   gridInstance.value.off('resizestop', handleGridChange)
+  gridInstance.value.off('dragstart', guardStaticInteraction)
+  gridInstance.value.off('resizestart', guardStaticInteraction)
   gridInstance.value.destroy(false)
   gridInstance.value = null
 }
@@ -641,7 +645,15 @@ function applyStateToGrid() {
     const height = clamp(entry.h ?? entry.rowSpan ?? 1, 1, MAX_ROW_SPAN)
     const x = clamp(entry.x ?? 0, 0, GRID_COLUMNS - width)
     const y = Math.max(0, entry.y ?? 0)
-    grid.update(el, { x, y, w: width, h: height })
+    grid.update(el, {
+      x,
+      y,
+      w: width,
+      h: height,
+      noMove: !isEditing.value,
+      noResize: !isEditing.value,
+      locked: !isEditing.value,
+    })
   }
   grid.commit()
   grid.compact()
@@ -652,13 +664,36 @@ function updateGridInteractivity() {
   if (!grid) return
   const editable = isEditing.value
   grid.setStatic(!editable)
-  grid.enableMove(editable)
-  grid.enableResize(editable)
+  grid.enableMove(editable, true)
+  grid.enableResize(editable, true)
+  grid.setMargin(`${GRID_MARGIN}px`)
   const nodes = grid.engine?.nodes || []
   nodes.forEach((node) => {
     if (!node?.el) return
     grid.movable(node.el, editable)
     grid.resizable(node.el, editable)
+    grid.update(node.el, {
+      noMove: !editable,
+      noResize: !editable,
+      locked: !editable,
+    })
+  })
+}
+
+function guardStaticInteraction(event, el) {
+  if (isEditing.value) return
+  event?.preventDefault?.()
+  if (!el) return
+  const node = el.gridstackNode
+  if (!node || !gridInstance.value) return
+  gridInstance.value.update(el, {
+    x: node.x,
+    y: node.y,
+    w: node.w,
+    h: node.h,
+    noMove: true,
+    noResize: true,
+    locked: true,
   })
 }
 
@@ -1380,7 +1415,8 @@ function cobrar(c) {
 }
 
 .grid-stack {
-  min-height: 320px;
+  min-height: 360px;
+  padding-bottom: 1.5rem;
 }
 
 .grid-stack-item {
