@@ -26,6 +26,34 @@
           <div ref="gridRef" class="grid-stack" :class="{ 'is-editing': isEditing }"></div>
         </section>
 
+        <transition name="fade">
+          <div
+            v-if="hiddenModules.length"
+            class="hidden-modules"
+            :style="{ background: theme.cardBg, color: theme.cardText, borderColor }"
+          >
+            <div class="hidden-modules__head">
+              <span class="hidden-modules__title">KPIs ocultos</span>
+              <span class="hidden-modules__hint" :style="{ color: subtext }">
+                Puedes restaurarlos cuando los necesites.
+              </span>
+            </div>
+            <div class="hidden-modules__list">
+              <button
+                v-for="item in hiddenModules"
+                :key="item.id"
+                type="button"
+                class="hidden-chip"
+                :style="{ background: chipBg, color: chipText, borderColor }"
+                @click="restoreModule(item.id)"
+              >
+                <i class="fa-regular fa-eye"></i>
+                <span>{{ moduleMap.get(item.id)?.title || item.id }}</span>
+              </button>
+            </div>
+          </div>
+        </transition>
+
         <div class="text-right">
           <RouterLink :to="{ name: 'PlanesLista' }" class="link-theme">Ver todos los planes</RouterLink>
         </div>
@@ -183,11 +211,11 @@ import {
   formatMonthLabel,
 } from '@/data/dashboard'
 
-const GRID_COLUMNS = 6
-const ROW_HEIGHT = 108
-const GRID_MARGIN = 22
-const MAX_COL_SPAN = 3
-const MAX_ROW_SPAN = 6
+const GRID_COLUMNS = 24
+const ROW_HEIGHT = 10
+const GRID_MARGIN = 3
+const MAX_COL_SPAN = 24
+const MAX_ROW_SPAN = 24
 const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v1'
 
 const router = useRouter()
@@ -273,6 +301,7 @@ const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
 const filters = reactive(cloneDeep(defaultFilters))
 const filterOptionsState = reactive({ ...initialFilterOptions })
 const layoutState = ref(normalizeLayout(loadStoredLayout() || defaultLayout))
+const hiddenModules = computed(() => layoutState.value.filter((item) => item.visible === false))
 
 const loadingDashboard = computed(() => loading.dashboard)
 
@@ -320,6 +349,55 @@ function updateModuleFilter(id, key, value) {
   filters[id][key] = value
 }
 
+function hideModule(id) {
+  if (id == null || !moduleMap.has(String(id))) return
+  if (!isEditing.value) return
+  const moduleId = String(id)
+  const updated = layoutState.value.map((item) =>
+    item.id === moduleId ? { ...item, visible: false } : { ...item },
+  )
+  layoutState.value = updated
+  detachWidgetApp(moduleId)
+}
+
+function restoreModule(id) {
+  if (id == null || !moduleMap.has(String(id))) return
+  const moduleId = String(id)
+  const target = layoutState.value.find((item) => item.id === moduleId)
+  if (!target) return
+
+  const w = clamp(Number(target.w ?? target.colSpan ?? 1) || 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+  const h = clamp(Number(target.h ?? target.rowSpan ?? 1) || 1, 1, MAX_ROW_SPAN)
+
+  const occupied = layoutState.value
+    .filter((item) => item.id !== moduleId && item.visible !== false)
+    .map((item) => ({
+      x: clamp(Number(item.x) || 0, 0, GRID_COLUMNS - 1),
+      y: Math.max(0, Number(item.y) || 0),
+      w: clamp(Number(item.w) || 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS)),
+      h: clamp(Number(item.h) || 1, 1, MAX_ROW_SPAN),
+    }))
+
+  let x = Number(target.x)
+  let y = Number(target.y)
+  if (!Number.isFinite(x)) x = 0
+  if (!Number.isFinite(y)) y = 0
+  x = clamp(x, 0, GRID_COLUMNS - w)
+  y = Math.max(0, y)
+
+  if (overlaps(x, y, w, h, occupied)) {
+    const spot = findSpot(w, h, occupied)
+    x = spot.x
+    y = spot.y
+  }
+
+  const updated = layoutState.value.map((item) => {
+    if (item.id !== moduleId) return { ...item }
+    return { ...item, visible: true, x, y, w, h }
+  })
+  layoutState.value = updated
+}
+
 const sharedDashboardState = {
   moduleMap,
   filters,
@@ -332,7 +410,9 @@ const sharedDashboardState = {
   subtext,
   borderColor,
   loadingDashboard,
+  isEditing: computed(() => isEditing.value),
   updateFilter: updateModuleFilter,
+  hideModule,
 }
 
 const editButtonStyle = computed(() => ({
@@ -456,14 +536,48 @@ function normalizeLayout(entries) {
     const saved = map.get(def.id) || {}
     const baseCol = Math.round(saved.w ?? saved.colSpan ?? def.layout.colSpan ?? 1)
     const baseRow = Math.round(saved.h ?? saved.rowSpan ?? def.layout.rowSpan ?? 1)
-    const w = clamp(baseCol, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
-    const h = clamp(baseRow, 1, MAX_ROW_SPAN)
+    const savedColumns = Number(saved.gridColumns)
+    const previousColumns =
+      Number.isFinite(savedColumns) && savedColumns > 0
+        ? savedColumns
+        : baseCol <= 6 && GRID_COLUMNS > 6
+        ? 6
+        : GRID_COLUMNS
+    let w = baseCol
+    if (previousColumns !== GRID_COLUMNS && previousColumns > 0) {
+      w = Math.max(1, Math.round((baseCol / previousColumns) * GRID_COLUMNS))
+    }
+    w = clamp(w, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+
+    const savedRowHeight = Number(saved.rowHeight)
+    const legacyRowHeight = 108
+    const previousRowHeight =
+      Number.isFinite(savedRowHeight) && savedRowHeight > 0
+        ? savedRowHeight
+        : baseRow <= 4 && ROW_HEIGHT < legacyRowHeight
+        ? legacyRowHeight
+        : ROW_HEIGHT
+    let h = baseRow
+    if (previousRowHeight !== ROW_HEIGHT && previousRowHeight > 0) {
+      h = Math.max(1, Math.round((baseRow * previousRowHeight) / ROW_HEIGHT))
+    }
+    h = clamp(h, 1, MAX_ROW_SPAN)
     const orderValue = Number(saved.order)
     const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
     const savedX = Number(saved.x)
     const savedY = Number(saved.y)
-    const x = Number.isFinite(savedX) ? clamp(savedX, 0, GRID_COLUMNS - w) : undefined
-    const y = Number.isFinite(savedY) ? Math.max(0, savedY) : undefined
+    const columnScale = previousColumns !== GRID_COLUMNS && previousColumns > 0 ? GRID_COLUMNS / previousColumns : 1
+    const rowScale = previousRowHeight !== ROW_HEIGHT && previousRowHeight > 0 ? previousRowHeight / ROW_HEIGHT : 1
+    let x = Number.isFinite(savedX) ? savedX : undefined
+    if (x != null) {
+      x = columnScale !== 1 ? Math.round(x * columnScale) : x
+      x = clamp(x, 0, GRID_COLUMNS - w)
+    }
+    let y = Number.isFinite(savedY) ? savedY : undefined
+    if (y != null) {
+      y = rowScale !== 1 ? Math.round(y * rowScale) : y
+      y = Math.max(0, y)
+    }
     const visible = saved.visible === false ? false : true
     return { id: def.id, w, h, order, x, y, visible }
   })
@@ -1045,7 +1159,14 @@ function loadStoredLayout() {
 function persistLayout(value) {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(value))
+    const serialized = Array.isArray(value)
+      ? value.map((item) => ({
+          ...item,
+          gridColumns: GRID_COLUMNS,
+          rowHeight: ROW_HEIGHT,
+        }))
+      : value
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(serialized))
   } catch (err) {
     console.warn('No se pudo guardar el layout del dashboard', err)
   }
@@ -1212,6 +1333,53 @@ watch(
 
 .kpi-card-host {
   height: 100%;
+}
+
+.hidden-modules {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1.25rem;
+  border: 1px solid;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.hidden-modules__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.hidden-modules__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.hidden-modules__hint {
+  font-size: 0.8rem;
+}
+
+.hidden-modules__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hidden-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9999px;
+  border: 1px solid;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hidden-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 
 .link-theme {

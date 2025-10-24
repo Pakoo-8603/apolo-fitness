@@ -5,8 +5,17 @@
         <h3 class="kpi-card__title">{{ moduleTitle }}</h3>
         <p class="kpi-card__subtitle" :style="{ color: subtext }">{{ moduleSubtitle }}</p>
       </div>
-      <div v-if="hasFilters" class="kpi-card__actions">
-        <div class="filter-trigger" @mouseenter="showFilters" @mouseleave="scheduleHide">
+      <div v-if="hasActions" class="kpi-card__actions">
+        <button
+          v-if="isEditing"
+          type="button"
+          class="icon-btn icon-btn--ghost"
+          title="Ocultar KPI"
+          @click.stop.prevent="requestHide"
+        >
+          <i class="fa-regular fa-eye-slash"></i>
+        </button>
+        <div v-if="hasFilters" class="filter-trigger" @mouseenter="showFilters" @mouseleave="scheduleHide">
           <button class="icon-btn" :style="iconBtnStyle" type="button" title="Ajustar filtros">
             <i class="fa-solid fa-sliders"></i>
           </button>
@@ -56,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, ref } from 'vue'
 
 const props = defineProps({
   moduleId: {
@@ -76,6 +85,8 @@ const moduleTitle = computed(() => moduleDef.value?.title || props.moduleId)
 const moduleSubtitle = computed(() => moduleDef.value?.subtitle || '')
 const moduleFilters = computed(() => (Array.isArray(moduleDef.value?.filters) ? moduleDef.value.filters : []))
 const hasFilters = computed(() => moduleFilters.value.length > 0)
+const isEditing = computed(() => Boolean(dashboardState.isEditing?.value))
+const hasActions = computed(() => isEditing.value || hasFilters.value)
 
 const filterValues = computed(() => {
   if (!dashboardState.filters[props.moduleId]) {
@@ -127,6 +138,16 @@ function cancelHide() {
     hideTimer = null
   }
 }
+
+function requestHide() {
+  dashboardState.hideModule?.(props.moduleId)
+  cancelHide()
+  filtersVisible.value = false
+}
+
+onBeforeUnmount(() => {
+  cancelHide()
+})
 </script>
 
 <style scoped>
@@ -168,10 +189,24 @@ function cancelHide() {
 .kpi-card__actions {
   display: flex;
   align-items: center;
+  gap: 0.35rem;
 }
 
 .filter-trigger {
   position: relative;
+}
+
+.icon-btn--ghost {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0.6rem;
+  transition: transform 0.18s ease;
+}
+
+.icon-btn--ghost:hover {
+  transform: translateY(-1px);
 }
 
 .kpi-card__filters {

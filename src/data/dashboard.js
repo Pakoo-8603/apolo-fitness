@@ -431,7 +431,7 @@ export const kpiDefinitions = [
     id: 'financialTotals',
     title: 'Ingresos vs gastos',
     subtitle: 'Totales del periodo seleccionado',
-    layout: { colSpan: 3, rowSpan: 1, order: 1 },
+    layout: { colSpan: 12, rowSpan: 12, order: 1 },
     filters: [
       { key: 'from', label: 'Desde', optionsKey: 'financialMonths' },
       { key: 'to', label: 'Hasta', optionsKey: 'financialMonths' },
@@ -441,7 +441,7 @@ export const kpiDefinitions = [
     id: 'incomeVariation',
     title: 'Variación de ingresos',
     subtitle: 'Comparación entre dos meses',
-    layout: { colSpan: 3, rowSpan: 1, order: 2 },
+    layout: { colSpan: 12, rowSpan: 12, order: 2 },
     filters: [
       { key: 'base', label: 'Mes base', optionsKey: 'variationMonths' },
       { key: 'target', label: 'Mes comparación', optionsKey: 'variationMonths' },
@@ -451,14 +451,14 @@ export const kpiDefinitions = [
     id: 'membershipsOverview',
     title: 'Estado de membresías',
     subtitle: 'Activos, cancelados y pagos al día',
-    layout: { colSpan: 3, rowSpan: 1, order: 3 },
+    layout: { colSpan: 12, rowSpan: 12, order: 3 },
     filters: [{ key: 'corte', label: 'Fecha de corte', optionsKey: 'membershipCuts' }],
   },
   {
     id: 'staffPresence',
     title: 'Personal en el gimnasio',
     subtitle: 'Disponibilidad por sucursal y día',
-    layout: { colSpan: 3, rowSpan: 1, order: 4 },
+    layout: { colSpan: 12, rowSpan: 12, order: 4 },
     filters: [
       { key: 'sucursalId', label: 'Sucursal', optionsKey: 'personalSucursales' },
       { key: 'fecha', label: 'Fecha', optionsKey: 'personalDates' },
@@ -468,14 +468,14 @@ export const kpiDefinitions = [
     id: 'planHighlights',
     title: 'Planes destacados',
     subtitle: 'Mayor y menor cantidad de personas',
-    layout: { colSpan: 3, rowSpan: 1, order: 5 },
+    layout: { colSpan: 12, rowSpan: 12, order: 5 },
     filters: [{ key: 'month', label: 'Mes', optionsKey: 'planMonths' }],
   },
   {
     id: 'inscriptionGrowth',
     title: 'Crecimiento de inscripciones',
     subtitle: 'Compara el desempeño mensual',
-    layout: { colSpan: 3, rowSpan: 1, order: 6 },
+    layout: { colSpan: 12, rowSpan: 12, order: 6 },
     filters: [
       { key: 'from', label: 'Mes base', optionsKey: 'inscriptionMonths' },
       { key: 'to', label: 'Mes comparación', optionsKey: 'inscriptionMonths' },
@@ -485,7 +485,7 @@ export const kpiDefinitions = [
     id: 'cancellations',
     title: 'Bajas por mes',
     subtitle: 'Seguimiento de cancelaciones',
-    layout: { colSpan: 3, rowSpan: 1, order: 7 },
+    layout: { colSpan: 12, rowSpan: 12, order: 7 },
     filters: [{ key: 'month', label: 'Mes', optionsKey: 'cancellationMonths' }],
   },
 ]
