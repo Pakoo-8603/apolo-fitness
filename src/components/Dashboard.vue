@@ -9,49 +9,11 @@
               KPIs dinámicos para monitorear tu operación.
             </p>
           </div>
-          <div class="dashboard-actions">
-            <button
-              v-if="isEditing"
-              class="action-btn"
-              :style="iconBtnStyle"
-              @click="resetLayout"
-            >
-              Restablecer
-            </button>
-            <button
-              class="action-btn action-btn--primary"
-              :class="{ 'is-active': isEditing }"
-              :style="editBtnStyle"
-              @click="toggleEdit"
-              :title="isEditing ? 'Cerrar edición' : 'Editar layout'"
-            >
-              <span v-if="isEditing">✔</span>
-              <span v-else>✎</span>
-            </button>
-          </div>
         </header>
 
-        <section class="gridstack-wrapper" :class="{ editing: isEditing }">
+        <section class="gridstack-wrapper">
           <div ref="gridRef" class="grid-stack"></div>
         </section>
-
-        <div
-          v-if="isEditing && hiddenModules.length"
-          class="hidden-summary"
-          :style="{ color: subtext }"
-        >
-          <span class="hidden-summary__title">KPI ocultos</span>
-          <button
-            v-for="item in hiddenModules"
-            :key="`hidden-${item.id}`"
-            type="button"
-            class="hidden-chip"
-            :style="{ borderColor, background: chipBg, color: chipText }"
-            @click="restoreModule(item.id)"
-          >
-            {{ moduleMap.get(item.id)?.title || item.id }}
-          </button>
-        </div>
 
         <div class="text-right">
           <RouterLink :to="{ name: 'PlanesLista' }" class="link-theme">Ver todos los planes</RouterLink>
@@ -188,6 +150,9 @@
 <script setup>
 import { computed, createApp, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { GridStack } from 'gridstack'
+import 'gridstack/dist/gridstack.min.css'
+
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useUiConfigStore } from '@/stores/uiConfig'
@@ -196,7 +161,7 @@ import ClientSummaryCard from '@/components/ClientSummaryCard.vue'
 import KpiModuleCard from '@/components/dashboard/KpiModuleCard.vue'
 import api from '@/api/services'
 import http from '@/api/http'
-import { fetchDashboardSnapshot, dashboardApiContract, dashboardMock } from '@/api/dashboard'
+import { fetchDashboardSnapshot, dashboardApiContract } from '@/api/dashboard'
 import {
   kpiDefinitions,
   defaultLayout,
@@ -206,16 +171,12 @@ import {
   formatDateLabel,
   formatMonthLabel,
 } from '@/data/dashboard'
-import { GridStack } from 'gridstack'
-import 'gridstack/dist/gridstack.min.css'
 
 const GRID_COLUMNS = 6
 const ROW_HEIGHT = 108
+const GRID_MARGIN = 22
 const MAX_COL_SPAN = 3
 const MAX_ROW_SPAN = 6
-const GRID_MARGIN = 22
-const LAYOUT_STORAGE_KEY = 'apolo.dashboard.layout.v3'
-const FILTER_STORAGE_KEY = 'apolo.dashboard.filters.v2'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -257,354 +218,108 @@ const theme = computed(() => {
 
 const primary = computed(() => theme.value.primary)
 const contrastOnPrimary = computed(() => (isDark(theme.value.primary) ? '#fff' : '#0f172a'))
-const subtext = computed(
-  () => theme.value.subtext || (isDark(theme.value.text) ? 'rgba(255,255,255,0.7)' : 'rgba(15,23,42,0.55)'),
-)
-const borderColor = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.08)'))
-const skeletonBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.10)' : '#eef2f7'))
-const chipBg = computed(() => (isDark(theme.value.text) ? 'rgba(255,255,255,0.08)' : '#fafbfe'))
-const chipText = computed(() => theme.value.cardText)
-const rowHoverStyle = computed(() => ({ background: 'transparent' }))
-const iconBtnStyle = computed(() => ({
-  color: theme.value.cardText,
-  borderColor: borderColor.value,
-  background: 'transparent',
-}))
-const fabSecondaryStyle = computed(() => ({
-  background: theme.value.cardBg,
-  color: theme.value.cardText,
-  border: `1px solid ${borderColor.value}`,
-  boxShadow: '0 8px 24px rgba(0,0,0,.08)',
-}))
-const selectStyle = computed(() => ({
-  color: theme.value.cardText,
-  borderColor: borderColor.value,
-  background: theme.value.cardBg,
-}))
-
-const loading = ref({ dashboard: true, buscar: false, resumen: false })
-const dashboardData = ref(null)
-const isEditing = ref(false)
-
-const filters = reactive(loadFilters())
-const layoutState = ref(loadLayout())
-const filterOptionsState = reactive(cloneDeep(initialFilterOptions))
-const gridRef = ref(null)
-const gridInstance = ref(null)
-const activeFilterPanel = ref(null)
-
-let filterHideTimer = null
-let pendingGridRefresh = false
-let suppressGridSync = false
-const widgetApps = new Map()
-let previousRenderCallback = null
-
-ensureFiltersStructure()
-
-const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
-
+const subtext = computed(() => theme.value.subtext || 'rgba(15, 23, 42, 0.56)')
+const borderColor = computed(() => `rgba(15, 23, 42, ${isDark(theme.value.cardBg) ? 0.24 : 0.08})`)
 const cardStyle = computed(() => ({
   background: theme.value.cardBg,
   color: theme.value.cardText,
+}))
+const iconBtnStyle = computed(() => ({
+  background: 'transparent',
+  border: `1px solid ${borderColor.value}`,
+  color: subtext.value,
+}))
+const selectStyle = computed(() => ({
+  background: theme.value.cardBg,
+  color: theme.value.cardText,
   borderColor: borderColor.value,
 }))
-
-const editBtnStyle = computed(() => ({
-  borderColor: borderColor.value,
-  color: isEditing.value ? contrastOnPrimary.value : theme.value.cardText,
-  background: isEditing.value ? theme.value.primary : 'transparent',
+const chipBg = computed(() => `rgba(148, 163, 184, ${isDark(theme.value.cardBg) ? 0.2 : 0.12})`)
+const chipText = computed(() => theme.value.cardText)
+const skeletonBg = computed(() => `rgba(148, 163, 184, ${isDark(theme.value.cardBg) ? 0.18 : 0.12})`)
+const rowHoverStyle = computed(() => ({
+  color: theme.value.cardText,
+  borderBottom: `1px solid ${borderColor.value}`,
+  background: 'transparent',
+}))
+const fabSecondaryStyle = computed(() => ({
+  backgroundColor: theme.value.cardBg,
+  color: theme.value.cardText,
+  border: `1px solid ${borderColor.value}`,
 }))
 
-const layoutOrdered = computed(() => [...layoutState.value].sort((a, b) => a.order - b.order))
-const hiddenModules = computed(() => layoutState.value.filter((item) => !item.visible))
+const gridRef = ref(null)
+const gridInstance = ref(null)
+let previousRenderCallback = null
+const widgetApps = new Map()
 
-const renderedModules = computed(() => {
-  const modules = []
-  for (const entry of layoutOrdered.value) {
-    if (!entry.visible) continue
-    const meta = moduleMap.get(entry.id)
-    if (!meta) continue
-    if (!filters[entry.id]) filters[entry.id] = { ...defaultFilters[entry.id] }
-    modules.push({ ...meta, layout: entry })
-  }
-  return modules
-})
+const dashboardData = ref(null)
+const loading = reactive({ dashboard: false, buscar: false, resumen: false })
 
-const loadingDashboard = computed(() => loading.value.dashboard)
+const moduleMap = new Map(kpiDefinitions.map((def) => [def.id, def]))
+const filters = reactive(cloneDeep(defaultFilters))
+const filterOptionsState = reactive({ ...initialFilterOptions })
+const layoutState = ref(normalizeLayout(defaultLayout))
+
+const loadingDashboard = computed(() => loading.dashboard)
 
 const moduleOutputs = computed(() => {
-  const data = dashboardData.value || dashboardMock
-  const outputs = {}
+  const data = dashboardData.value || {}
+  const result = {}
   for (const def of kpiDefinitions) {
     const resolver = moduleResolvers[def.id]
-    outputs[def.id] = resolver ? resolver(data, filters[def.id] || {}, filterOptionsState) : { metrics: [] }
+    if (typeof resolver === 'function') {
+      result[def.id] = resolver(data, filters[def.id])
+    }
   }
-  return outputs
+  return result
 })
 
 watch(
   () => dashboardData.value,
   (data) => {
-    const updated = createFilterOptions(data || dashboardMock)
-    for (const key of Object.keys(updated)) {
-      filterOptionsState[key] = updated[key]
-    }
+    const options = createFilterOptions(data)
+    Object.assign(filterOptionsState, options)
     ensureFiltersValid()
   },
   { immediate: true },
 )
 
-watch(
-  layoutState,
-  (value) => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(value))
-  },
-  { deep: true },
-)
-
-watch(
-  filters,
-  (value) => {
-    if (typeof window === 'undefined') return
-    const plain = {}
-    for (const def of kpiDefinitions) {
-      plain[def.id] = { ...value[def.id] }
-    }
-    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(plain))
-  },
-  { deep: true },
-)
-
-watch(
-  layoutState,
-  () => {
-    if (suppressGridSync) return
-    scheduleGridSync()
-  },
-  { deep: true },
-)
-
-watch(
-  () => renderedModules.value.length,
-  () => {
-    queueGridRefresh()
-  },
-  { immediate: true },
-)
-
-watch(isEditing, (active) => {
-  updateGridInteractivity()
-  if (!active) {
-    activeFilterPanel.value = null
-  }
-})
-
-function toggleEdit() {
-  isEditing.value = !isEditing.value
-  if (!isEditing.value) {
-    activeFilterPanel.value = null
-  }
-}
-
-function toggleVisibility(id) {
-  const entry = layoutState.value.find((item) => item.id === id)
-  if (!entry) return
-  entry.visible = false
-  if (activeFilterPanel.value === id) {
-    activeFilterPanel.value = null
-  }
-  reflowLayout()
-  queueGridRefresh()
-}
-
-function restoreModule(id) {
-  const entry = layoutState.value.find((item) => item.id === id)
-  if (!entry) return
-  entry.visible = true
-  if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y)) {
-    const baseline = layoutState.value
-      .filter((item) => item.visible && item.id !== id)
-      .reduce((max, item) => Math.max(max, (item.y ?? 0) + item.h), 0)
-    entry.x = 0
-    entry.y = baseline
-  }
-  reflowLayout()
-  queueGridRefresh()
-}
-
-function resetLayout() {
-  layoutState.value = normalizeLayout(defaultLayout)
+function ensureFiltersValid() {
   for (const def of kpiDefinitions) {
-    filters[def.id] = { ...defaultFilters[def.id] }
-  }
-  ensureFiltersValid()
-  queueGridRefresh()
-}
-
-async function queueGridRefresh() {
-  if (pendingGridRefresh) return
-  pendingGridRefresh = true
-  await nextTick()
-  pendingGridRefresh = false
-  await rebuildGrid()
-}
-
-function scheduleGridSync() {
-  if (!gridInstance.value) {
-    queueGridRefresh()
-    return
-  }
-  nextTick(() => {
-    renderGrid()
-  })
-}
-
-async function rebuildGrid() {
-  destroyGrid()
-  await nextTick()
-  if (!gridRef.value) return
-  initGrid()
-}
-
-function reflowLayout() {
-  layoutState.value = placeItems(
-    layoutState.value.map((item, index) => ({
-      ...item,
-      order: index + 1,
-    })),
-  )
-}
-
-function initGrid() {
-  if (!gridRef.value) return
-  const grid = GridStack.init(
-    {
-      column: GRID_COLUMNS,
-      margin: GRID_MARGIN,
-      cellHeight: ROW_HEIGHT,
-      float: false,
-      disableOneColumnMode: false,
-      staticGrid: !isEditing.value,
-      draggable: { handle: '.drag-handle' },
-      resizable: { handles: 'se, e, s' },
-    },
-    gridRef.value,
-  )
-  gridInstance.value = grid
-  grid.on('change', handleGridChange)
-  grid.on('dragstop', handleGridChange)
-  grid.on('resizestop', handleGridChange)
-  grid.on('dragstart', guardStaticInteraction)
-  grid.on('resizestart', guardStaticInteraction)
-  grid.on('removed', handleGridRemoved)
-  renderGrid()
-}
-
-function destroyGrid() {
-  if (!gridInstance.value) return
-  detachAllWidgetApps()
-  gridInstance.value.off('change', handleGridChange)
-  gridInstance.value.off('dragstop', handleGridChange)
-  gridInstance.value.off('resizestop', handleGridChange)
-  gridInstance.value.off('dragstart', guardStaticInteraction)
-  gridInstance.value.off('resizestart', guardStaticInteraction)
-  gridInstance.value.off('removed', handleGridRemoved)
-  gridInstance.value.destroy(false)
-  gridInstance.value = null
-}
-
-function updateGridInteractivity() {
-  const grid = gridInstance.value
-  if (!grid) return
-  const editable = isEditing.value
-  grid.setStatic(!editable)
-  grid.enableMove(editable, true)
-  grid.enableResize(editable, true)
-  if (grid.opts) {
-    grid.opts.margin = GRID_MARGIN
-  }
-  if (grid.el?.style) {
-    const marginValue = typeof GRID_MARGIN === 'number' ? `${GRID_MARGIN}px` : String(GRID_MARGIN)
-    grid.el.style.setProperty('--gs-grid-margin', marginValue)
-  }
-  const nodes = grid.engine?.nodes || []
-  nodes.forEach((node) => {
-    if (!node?.el) return
-    grid.movable(node.el, editable)
-    grid.resizable(node.el, editable)
-    grid.update(node.el, {
-      noMove: !editable,
-      noResize: !editable,
-      locked: !editable,
-    })
-  })
-}
-
-function renderGrid() {
-  const grid = gridInstance.value
-  if (!grid) return
-  suppressGridSync = true
-  const widgets = []
-  for (const entry of layoutOrdered.value) {
-    if (!entry.visible) continue
-    if (!moduleMap.has(entry.id)) continue
-    const width = clamp(entry.w ?? entry.colSpan ?? 1, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
-    const height = clamp(entry.h ?? entry.rowSpan ?? 1, 1, MAX_ROW_SPAN)
-    const x = clamp(entry.x ?? 0, 0, GRID_COLUMNS - width)
-    const y = Math.max(0, entry.y ?? 0)
-    entry.w = width
-    entry.h = height
-    entry.x = x
-    entry.y = y
-    widgets.push({
-      id: entry.id,
-      x,
-      y,
-      w: width,
-      h: height,
-      noMove: !isEditing.value,
-      noResize: !isEditing.value,
-      locked: !isEditing.value,
-    })
-  }
-  grid.load(widgets, true)
-  const nodes = grid.engine?.nodes || []
-  nodes.forEach((node) => {
-    const id = node?.id ?? node?.el?.dataset?.gsId ?? node?.el?.getAttribute?.('data-gs-id')
-    if (!id || !moduleMap.has(String(id))) return
-    const host = node.el?.querySelector?.('.grid-stack-item-content')
-    if (!host) return
-    renderModuleInto(host, String(id))
-  })
-  updateGridInteractivity()
-  nextTick(() => {
-    suppressGridSync = false
-  })
-}
-
-function handleGridRemoved(_event, items) {
-  if (!items) return
-  items.forEach((item) => {
-    const rawId = item?.id ?? item?.el?.dataset?.gsId ?? item?.el?.getAttribute?.('data-gs-id')
-    if (rawId != null) {
-      detachWidgetApp(String(rawId))
+    if (!filters[def.id]) {
+      filters[def.id] = { ...(defaultFilters[def.id] || {}) }
     }
-  })
-}
-
-function detachWidgetApp(id) {
-  const record = widgetApps.get(String(id))
-  if (!record) return
-  record.app.unmount()
-  record.el.classList.remove('kpi-card-host')
-  widgetApps.delete(String(id))
-}
-
-function detachAllWidgetApps() {
-  for (const id of Array.from(widgetApps.keys())) {
-    detachWidgetApp(id)
+    for (const filterDef of def.filters || []) {
+      const current = filters[def.id][filterDef.key]
+      const options = filterOptionsState[filterDef.optionsKey] || []
+      if (!options.find((opt) => String(opt.value) === String(current))) {
+        filters[def.id][filterDef.key] = options[0]?.value ?? ''
+      }
+    }
   }
+}
+
+function updateModuleFilter(id, key, value) {
+  if (!filters[id]) {
+    filters[id] = { ...(defaultFilters[id] || {}) }
+  }
+  filters[id][key] = value
+}
+
+const sharedDashboardState = {
+  moduleMap,
+  filters,
+  filterOptionsState,
+  defaultFilters,
+  moduleOutputs,
+  cardStyle,
+  iconBtnStyle,
+  selectStyle,
+  subtext,
+  borderColor,
+  loadingDashboard,
+  updateFilter: updateModuleFilter,
 }
 
 function renderModuleInto(el, moduleId) {
@@ -614,6 +329,20 @@ function renderModuleInto(el, moduleId) {
   app.provide('dashboardState', sharedDashboardState)
   app.mount(el)
   widgetApps.set(String(moduleId), { app, el })
+}
+
+function detachWidgetApp(id) {
+  const entry = widgetApps.get(String(id))
+  if (!entry) return
+  entry.app.unmount()
+  entry.el.classList.remove('kpi-card-host')
+  widgetApps.delete(String(id))
+}
+
+function detachAllWidgetApps() {
+  for (const id of Array.from(widgetApps.keys())) {
+    detachWidgetApp(id)
+  }
 }
 
 function installRenderCallback() {
@@ -643,120 +372,45 @@ function uninstallRenderCallback() {
   }
 }
 
-function guardStaticInteraction(event, el) {
-  if (isEditing.value) return
-  event?.preventDefault?.()
-  if (!el) return
-  const node = el.gridstackNode
-  if (!node || !gridInstance.value) return
-  gridInstance.value.update(el, {
-    x: node.x,
-    y: node.y,
-    w: node.w,
-    h: node.h,
-    noMove: true,
-    noResize: true,
-    locked: true,
-  })
+function initGrid() {
+  if (!gridRef.value) return
+  const grid = GridStack.init(
+    {
+      column: GRID_COLUMNS,
+      margin: GRID_MARGIN,
+      cellHeight: ROW_HEIGHT,
+      float: false,
+      staticGrid: true,
+      disableOneColumnMode: false,
+    },
+    gridRef.value,
+  )
+  gridInstance.value = grid
+  renderGrid()
 }
 
-function handleGridChange() {
-  if (suppressGridSync) return
+function destroyGrid() {
   const grid = gridInstance.value
   if (!grid) return
-  const nodes = grid.engine?.nodes || []
-  suppressGridSync = true
-  layoutState.value.forEach((entry) => {
-    if (!entry.visible) return
-    const node = nodes.find((n) => {
-      const id = n.id ?? n.el?.dataset.gsId ?? n.el?.getAttribute('data-gs-id')
-      return String(id) === String(entry.id)
-    })
-    if (!node) return
-    entry.x = node.x
-    entry.y = node.y
-    entry.w = node.w
-    entry.h = node.h
-  })
-  const visible = layoutState.value
-    .filter((entry) => entry.visible)
-    .slice()
-    .sort((a, b) => (a.y - b.y) || (a.x - b.x))
-  visible.forEach((entry, index) => {
-    entry.order = index + 1
-  })
-  const hidden = layoutState.value.filter((entry) => !entry.visible)
-  hidden.forEach((entry, index) => {
-    entry.order = visible.length + index + 1
-  })
-  nextTick(() => {
-    suppressGridSync = false
-  })
+  detachAllWidgetApps()
+  grid.destroy(false)
+  gridInstance.value = null
 }
 
-function toggleFilterPanel(id) {
-  if (activeFilterPanel.value === id) {
-    activeFilterPanel.value = null
-    return
-  }
-  cancelFilterHide()
-  activeFilterPanel.value = id
-}
-
-function scheduleFilterHide() {
-  cancelFilterHide()
-  if (!activeFilterPanel.value) return
-  filterHideTimer = setTimeout(() => {
-    activeFilterPanel.value = null
-  }, 220)
-}
-
-function cancelFilterHide() {
-  if (filterHideTimer) {
-    clearTimeout(filterHideTimer)
-    filterHideTimer = null
-  }
-}
-
-function handleFilterInteraction() {
-  scheduleFilterHide()
-}
-
-function onModuleLeave(id) {
-  if (activeFilterPanel.value === id) {
-    scheduleFilterHide()
-  }
-}
-
-function updateModuleFilter(id, key, value) {
-  if (!filters[id]) {
-    filters[id] = { ...(defaultFilters[id] || {}) }
-  }
-  filters[id][key] = value
-}
-
-const sharedDashboardState = {
-  moduleMap,
-  filters,
-  filterOptionsState,
-  defaultFilters,
-  moduleOutputs,
-  theme,
-  subtext,
-  borderColor,
-  cardStyle,
-  iconBtnStyle,
-  selectStyle,
-  loadingDashboard,
-  isEditing,
-  activeFilterPanel,
-  toggleFilterPanel,
-  toggleVisibility,
-  scheduleFilterHide,
-  cancelFilterHide,
-  handleFilterInteraction,
-  onModuleLeave,
-  updateFilter: updateModuleFilter,
+function renderGrid() {
+  const grid = gridInstance.value
+  if (!grid) return
+  const nodes = layoutState.value.map((item) => ({
+    id: item.id,
+    x: item.x,
+    y: item.y,
+    w: item.w,
+    h: item.h,
+    locked: true,
+    noMove: true,
+    noResize: true,
+  }))
+  grid.load(nodes)
 }
 
 function normalizeLayout(entries) {
@@ -769,12 +423,7 @@ function normalizeLayout(entries) {
     const h = clamp(baseRow, 1, MAX_ROW_SPAN)
     const orderValue = Number(saved.order)
     const order = Number.isFinite(orderValue) ? orderValue : def.layout.order ?? index + 1
-    const visible = saved.visible !== false
-    const xValue = Number(saved.x)
-    const yValue = Number(saved.y)
-    const x = Number.isFinite(xValue) ? clamp(Math.round(xValue), 0, GRID_COLUMNS - w) : null
-    const y = Number.isFinite(yValue) ? Math.max(0, Math.round(yValue)) : null
-    return { id: def.id, w, h, order, visible, x, y }
+    return { id: def.id, w, h, order }
   })
   return placeItems(prepared)
 }
@@ -784,42 +433,38 @@ function clamp(value, min, max) {
 }
 
 function placeItems(items) {
-  const visible = items.filter((item) => item.visible).sort((a, b) => a.order - b.order)
-  const hidden = items.filter((item) => !item.visible).sort((a, b) => a.order - b.order)
-  const result = []
+  const ordered = items.slice().sort((a, b) => a.order - b.order)
   const occupied = []
-
-  const placeGroup = (group) => {
-    for (const item of group) {
-      const w = clamp(item.w, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
-      const h = clamp(item.h, 1, MAX_ROW_SPAN)
-      let x = item.x
-      let y = item.y
-      if (x == null || y == null || overlaps(x, y, w, h, occupied)) {
-        const spot = findSpot(w, h, occupied)
-        x = spot.x
-        y = spot.y
-      }
-      occupied.push({ x, y, w, h })
-      result.push({ ...item, w, h, x, y })
+  const result = []
+  for (const item of ordered) {
+    const w = clamp(item.w, 1, Math.min(MAX_COL_SPAN, GRID_COLUMNS))
+    const h = clamp(item.h, 1, MAX_ROW_SPAN)
+    let x = clamp(item.x ?? 0, 0, GRID_COLUMNS - w)
+    let y = Math.max(0, item.y ?? 0)
+    if (overlaps(x, y, w, h, occupied)) {
+      const spot = findSpot(w, h, occupied)
+      x = spot.x
+      y = spot.y
     }
+    occupied.push({ x, y, w, h })
+    result.push({ id: item.id, w, h, x, y, order: item.order })
   }
-
-  placeGroup(visible)
-  placeGroup(hidden)
-
-  result.sort((a, b) => a.order - b.order)
-  result.forEach((entry, index) => {
-    entry.order = index + 1
-  })
   return result
 }
 
-function findSpot(w, h, occupied) {
+function overlaps(x, y, w, h, nodes) {
+  return nodes.some((node) => {
+    const xOverlap = x < node.x + node.w && x + w > node.x
+    const yOverlap = y < node.y + node.h && y + h > node.y
+    return xOverlap && yOverlap
+  })
+}
+
+function findSpot(w, h, nodes) {
   let y = 0
   while (true) {
     for (let x = 0; x <= GRID_COLUMNS - w; x += 1) {
-      if (!overlaps(x, y, w, h, occupied)) {
+      if (!overlaps(x, y, w, h, nodes)) {
         return { x, y }
       }
     }
@@ -827,81 +472,25 @@ function findSpot(w, h, occupied) {
   }
 }
 
-function overlaps(x, y, w, h, nodes) {
-  return nodes.some((node) => {
-    const intersectsX = x < node.x + node.w && x + w > node.x
-    const intersectsY = y < node.y + node.h && y + h > node.y
-    return intersectsX && intersectsY
-  })
-}
-
-function loadLayout() {
-  if (typeof window === 'undefined') return normalizeLayout(defaultLayout)
-  try {
-    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY)
-    if (!raw) return normalizeLayout(defaultLayout)
-    const parsed = JSON.parse(raw)
-    return normalizeLayout(parsed)
-  } catch {
-    return normalizeLayout(defaultLayout)
-  }
-}
-
-function loadFilters() {
-  const base = cloneDeep(defaultFilters)
-  if (typeof window === 'undefined') return base
-  try {
-    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY)
-    if (!raw) return base
-    const parsed = JSON.parse(raw)
-    for (const def of kpiDefinitions) {
-      base[def.id] = { ...base[def.id], ...(parsed?.[def.id] || {}) }
-    }
-    return base
-  } catch {
-    return base
-  }
-}
-
-function ensureFiltersStructure() {
-  for (const def of kpiDefinitions) {
-    if (!filters[def.id]) filters[def.id] = { ...defaultFilters[def.id] }
-  }
-}
-
-function ensureFiltersValid() {
-  for (const def of kpiDefinitions) {
-    const moduleFilters = filters[def.id] || (filters[def.id] = {})
-    const defaults = defaultFilters[def.id] || {}
-    for (const filterDef of def.filters || []) {
-      const options = filterOptionsState[filterDef.optionsKey] || []
-      const current = moduleFilters[filterDef.key]
-      const exists = options.some((opt) => String(opt.value) === String(current))
-      if (!exists) {
-        const fallback =
-          defaults[filterDef.key] ??
-          options[options.length - 1]?.value ??
-          options[0]?.value ??
-          ''
-        moduleFilters[filterDef.key] = fallback
-      }
-    }
-  }
-}
 function sumBy(list, key) {
   return (list || []).reduce((sum, item) => sum + Number(item?.[key] ?? 0), 0)
 }
 
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString('es-MX')
-}
-
 function money(value) {
-  return Number(value || 0).toLocaleString('es-MX', {
+  const amount = Number(value ?? 0)
+  if (!Number.isFinite(amount)) return '—'
+  return amount.toLocaleString('es-MX', {
     style: 'currency',
     currency: 'MXN',
     maximumFractionDigits: 0,
   })
+}
+
+function formatNumber(value) {
+  if (value == null || Number.isNaN(value)) return '—'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '—'
+  return num.toLocaleString('es-MX')
 }
 
 function calcPercentChange(base, value) {
@@ -1258,7 +847,7 @@ const moduleResolvers = {
 }
 
 async function loadDashboard() {
-  loading.value.dashboard = true
+  loading.dashboard = true
   try {
     const data = await fetchDashboardSnapshot()
     dashboardData.value = data
@@ -1266,22 +855,21 @@ async function loadDashboard() {
       window.__DASHBOARD_API_CONTRACT__ = dashboardApiContract
     }
   } finally {
-    loading.value.dashboard = false
+    loading.dashboard = false
   }
 }
 
 onMounted(async () => {
   installRenderCallback()
   await nextTick()
+  initGrid()
   if (!auth.isAuthenticated) return
   await ws.ensureEmpresaSet()
   await loadDashboard()
-  await queueGridRefresh()
 })
 
 onBeforeUnmount(() => {
   destroyGrid()
-  cancelFilterHide()
   uninstallRenderCallback()
 })
 
@@ -1317,7 +905,7 @@ async function doSearch(q) {
     resultados.value = []
     return
   }
-  loading.value.buscar = true
+  loading.buscar = true
   try {
     const { data } = await api.clientes.list({ search: q.trim(), page_size: 10, ordering: '-id' })
     resultados.value = (data?.results || data || []).map((r) => ({
@@ -1327,7 +915,7 @@ async function doSearch(q) {
       email: r.email || '—',
     }))
   } finally {
-    loading.value.buscar = false
+    loading.buscar = false
   }
 }
 
@@ -1346,129 +934,72 @@ async function selectCliente(c) {
 
 async function openResumen(id) {
   panelClienteOpen.value = true
-  loading.value.resumen = true
+  loading.resumen = true
   try {
     const { data } = await http.get(`clientes/${id}/resumen/`)
     resumen.value = data || null
   } catch {
     resumen.value = null
   } finally {
-    loading.value.resumen = false
+    loading.resumen = false
   }
 }
 
 function verEditar() {
-  const id = resumen.value?.id
-  if (!id) return
-  try {
-    router.push({ name: 'ClientesLista', query: { sel: id } })
-  } catch {}
+  if (!resumen.value?.id) return
+  router.push({ name: 'ClientesDetalle', params: { id: resumen.value.id } })
+  closePanelCliente()
 }
 
-function onClienteCreado() {
-  modalCliente.value = false
+function cobrar(cliente) {
+  router.push({ name: 'VentasCrear', query: { cliente: cliente.id } })
+  closePanelCliente()
 }
 
-function cobrar(c) {
-  console.log('Cobrar a:', c)
+function onClienteCreado(cliente) {
+  if (!cliente?.id) return
+  openResumen(cliente.id)
 }
 </script>
 
 <style scoped>
 .dashboard-head {
-  @apply flex flex-wrap items-start justify-between gap-4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
 }
 
 .dashboard-title {
-  @apply text-2xl font-semibold;
+  font-size: clamp(1.75rem, 2vw + 1rem, 2.25rem);
+  font-weight: 700;
 }
 
 .dashboard-subtitle {
-  @apply text-sm;
-}
-
-.dashboard-actions {
-  @apply flex items-center gap-3;
-}
-
-.action-btn {
-  @apply rounded-xl border px-4 py-2 text-sm font-semibold transition-colors duration-150;
-}
-
-.action-btn--primary {
-  @apply flex items-center justify-center h-10 w-10 rounded-full border;
-}
-
-.action-btn--primary.is-active {
-  box-shadow: 0 10px 26px rgba(26, 94, 255, 0.28);
+  font-size: 0.95rem;
 }
 
 .gridstack-wrapper {
   position: relative;
 }
 
-.gridstack-wrapper.editing .grid-stack-item-content {
-  cursor: grab;
-}
-
 .grid-stack {
   min-height: 360px;
-  padding-bottom: 1.5rem;
 }
 
-.grid-stack-item {
-  padding: 0 !important;
-}
-
-.grid-stack-item-content.kpi-card-host {
-  padding: 0;
-  display: flex;
+.grid-stack-item-content {
   height: 100%;
 }
 
-.grid-stack-item-content.kpi-card-host > .kpi-card {
-  flex: 1 1 auto;
-}
-
-.icon-btn {
-  @apply inline-flex items-center justify-center rounded-xl text-sm font-semibold;
-  width: 36px;
-  height: 36px;
-  border: 1px solid v-bind('borderColor');
-  background: transparent;
-  transition: filter 0.15s ease;
-}
-
-.icon-btn:hover {
-  filter: brightness(0.95);
-}
-
-
-.hidden-summary {
-  @apply flex flex-wrap items-center justify-end gap-3 text-sm pt-2;
-}
-
-.hidden-summary__title {
-  font-weight: 600;
-}
-
-.hidden-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border-radius: 9999px;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.8125rem;
-  border: 1px solid;
-  transition: filter 0.15s ease;
-}
-
-.hidden-chip:hover {
-  filter: brightness(0.95);
+.kpi-card-host {
+  height: 100%;
 }
 
 .link-theme {
-  color: v-bind(primary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--apolo-primary, #1a5eff);
 }
 
 .link-theme:hover {
@@ -1478,44 +1009,38 @@ function cobrar(c) {
 .fab {
   position: fixed;
   right: 1.5rem;
-  bottom: 6.5rem;
-  height: 3.5rem;
-  width: 3.5rem;
-  border-radius: 9999px;
+  bottom: 1.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  height: 3.25rem;
+  width: 3.25rem;
+  border-radius: 9999px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 40;
+}
+
+.fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
 }
 
 .fab--secondary {
-  right: 1.5rem;
-  bottom: 1.5rem;
-  height: 3.5rem;
-  width: 3.5rem;
-  border-radius: 9999px;
+  bottom: 6.5rem;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.6rem;
+  font-size: 0.9rem;
+  transition: all 0.18s ease;
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
-
-@media (max-width: 640px) {
-  .kpi-card__filters.floating {
-    left: 16px;
-    right: 16px;
-    width: auto;
-  }
-
-  .field-inline {
-    @apply w-full;
-  }
+.icon-btn:hover {
+  transform: translateY(-1px);
 }
 </style>
