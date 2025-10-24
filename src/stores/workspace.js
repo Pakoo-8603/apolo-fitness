@@ -2,16 +2,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/api/services'
+import { system as apiSystem } from '@/api/http' // helpers para set headers + localStorage
 
-/**
- * Store de contexto (empresa/sucursal/rol) para toda la app.
- * - Lee empresa/sucursal/rol del endpoint de perfil.
- * - Mantiene un catálogo de sucursales de la empresa activa.
- * - Expone helpers para cambiar empresa/sucursal (solo superuser).
- * - Coloca el header X-Empresa-Id en api.system cuando hay empresa activa.
- */
 export const useWorkspaceStore = defineStore('workspace', () => {
-  // ===== State =====
   const empresaId = ref(null)
   const empresaNombre = ref('')
   const sucursalId = ref(null)
@@ -20,119 +13,130 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const isSuperuser = ref(false)
   const initialized = ref(false)
 
-  // Catálogo de sucursales de la empresa activa (para select global)
   const sucursales = ref([])
 
-  // ===== Init desde perfil =====
-  async function initFromProfile () {
-    const { data: pr } = await api.accounts.perfil()
+  async function initFromLocalStorageOrProfile () {
+    // 1) Intentar leer del localStorage (http.js ya expone getters via headers)
+    try {
+      // apiSystem no tiene getters; pero el interceptor ya leerá de localStorage
+      // aquí sólo vamos a intentar poblar nombres consultando si tenemos ids
+      const { data: pr } = await api.accounts.perfil()
+      isSuperuser.value = !!(pr?.is_superuser || pr?.is_staff)
+      rol.value = pr?.rol_activo || pr?.rol || null
 
-    // Preferimos campos *_activa si existen; si no, fallback a empresa/sucursal planos
-    const emp = pr?.empresa_activa || pr?.empresa
-    const suc = pr?.sucursal_activa || pr?.sucursal
+      // Preferimos lo que venga en localStorage (porque el usuario pudo cambiar)
+      // y usamos el perfil como fallback de nombres si coinciden
+      const empLS = localStorage.getItem('agora.empresa')
+      const sucLS = localStorage.getItem('agora.sucursal')
 
-    empresaId.value = emp?.id ?? null
-    empresaNombre.value = emp?.nombre ?? ''
-    sucursalId.value = suc?.id ?? null
-    sucursalNombre.value = suc?.nombre ?? ''
-    rol.value = pr?.rol_activo || pr?.rol || null
-    isSuperuser.value = !!(pr?.is_superuser || pr?.is_staff)
-
-    // Header global X-Empresa-Id (el backend solo lo respeta para superuser, pero no estorba)
-    if (empresaId.value) api.system.setEmpresa(empresaId.value)
-
-    await loadSucursales()
-    initialized.value = true
-  }
-
-  async function ensureEmpresaSet () {
-    if (!initialized.value) {
-      try {
-        await initFromProfile()
-      } catch {
-        // Si el perfil falla, marcamos como inicializado para no bloquear la app
-        initialized.value = true
+      // empresa
+      if (empLS) {
+        empresaId.value = Number(empLS)
+        apiSystem.setEmpresa(empresaId.value)
+      } else {
+        const emp = pr?.empresa_activa || pr?.empresa
+        empresaId.value = emp?.id ?? null
+        apiSystem.setEmpresa(empresaId.value)
+        if (empresaId.value) localStorage.setItem('agora.empresa', String(empresaId.value))
       }
+
+      // sucursal (opcional)
+      if (sucLS) {
+        sucursalId.value = Number(sucLS)
+        apiSystem.setSucursal(sucursalId.value)
+      } else {
+        const suc = pr?.sucursal_activa || pr?.sucursal
+        sucursalId.value = suc?.id ?? null
+        if (sucursalId.value) {
+          apiSystem.setSucursal(sucursalId.value)
+          localStorage.setItem('agora.sucursal', String(sucursalId.value))
+        }
+      }
+
+      // nombres de empresa/sucursal (si el perfil no coincide, se refrescarán al cargar catálogos)
+      empresaNombre.value = pr?.empresa_activa?.nombre || pr?.empresa?.nombre || ''
+      sucursalNombre.value = pr?.sucursal_activa?.nombre || pr?.sucursal?.nombre || ''
+
+      await loadSucursales()
+    } catch {
+      // sin bloquear la app
+      sucursales.value = []
+    } finally {
+      initialized.value = true
     }
   }
 
-  // ===== Catálogo sucursales de la empresa activa =====
+  async function ensureEmpresaSet () {
+    if (!initialized.value) await initFromLocalStorageOrProfile()
+  }
+
   async function loadSucursales () {
     if (!empresaId.value) { sucursales.value = []; return }
     try {
       const { data } = await api.sucursales.list({
         empresa: empresaId.value,
         ordering: 'nombre',
-        page_size: 200
+        page_size: 200,
       })
       sucursales.value = data?.results || data || []
+      // si hay sucursalId pero no nombre, complétalo
+      if (sucursalId.value && !sucursalNombre.value) {
+        const s = sucursales.value.find(x => x.id === Number(sucursalId.value))
+        if (s) sucursalNombre.value = s.nombre
+      }
     } catch {
       sucursales.value = []
     }
   }
 
-  // ===== Cambios de empresa/sucursal (solo superuser) =====
-  async function changeEmpresa (newEmpresaId, newEmpresaNombre = '') {
-    if (!isSuperuser.value) return // protección
+  async function changeEmpresa (newEmpresaId) {
     const idNum = newEmpresaId ? Number(newEmpresaId) : null
     if (idNum === empresaId.value) return
-
     empresaId.value = idNum
-    empresaNombre.value = newEmpresaNombre || empresaNombre.value
+    apiSystem.setEmpresa(idNum)
+    // persist
+    if (idNum) localStorage.setItem('agora.empresa', String(idNum))
+    else localStorage.removeItem('agora.empresa')
 
-    // Header para siguientes requests (el backend lo respeta si eres superuser)
-    api.system.setEmpresa(idNum)
-
-    // Al cambiar empresa, reiniciamos sucursal y recargamos catálogo
+    // reset sucursal al cambiar empresa
     sucursalId.value = null
     sucursalNombre.value = ''
+    localStorage.removeItem('agora.sucursal')
+    apiSystem.setSucursal(null)
+
+    // (opcional) precarga sucursales de la nueva empresa
     await loadSucursales()
+
+    // recarga dura para que todo monte con el nuevo header/contexto:
+    window.location.reload()
   }
 
-  function changeSucursal (newSucursalId, newSucursalNombre = '') {
-    if (!isSuperuser.value) return // protección
-    sucursalId.value = newSucursalId ? Number(newSucursalId) : null
-    sucursalNombre.value = newSucursalNombre || sucursalNombre.value
+  function changeSucursal (newSucursalId) {
+    const idNum = newSucursalId ? Number(newSucursalId) : null
+    if (idNum === sucursalId.value) return
+    sucursalId.value = idNum
+    apiSystem.setSucursal(idNum)
+    if (idNum) localStorage.setItem('agora.sucursal', String(idNum))
+    else localStorage.removeItem('agora.sucursal')
+
+    // puedes querer recargar también si tu backend filtra por sucursal:
+    window.location.reload()
   }
 
-  // ===== Alias internos (compatibilidad con código previo) =====
-  async function setEmpresa (id, name = '') {
-    // mismo comportamiento que changeEmpresa (y mismo bloqueo de superuser)
-    return changeEmpresa(id, name)
-  }
-  function setSucursal (id, name = '') {
-    // mismo comportamiento que changeSucursal (y mismo bloqueo de superuser)
-    return changeSucursal(id, name)
-  }
-
-  // ===== Helpers reactivity keys (útiles para watch en vistas) =====
   const empresaKey = computed(() => empresaId.value || 'no-emp')
   const sucursalKey = computed(() => `${empresaKey.value}:${sucursalId.value || 'no-suc'}`)
 
   return {
-    // state
-    empresaId,
-    empresaNombre,
-    sucursalId,
-    sucursalNombre,
+    empresaId, empresaNombre,
+    sucursalId, sucursalNombre,
+    rol, isSuperuser, initialized,
     sucursales,
-    rol,
-    isSuperuser,
-    initialized,
 
-    // getters
-    empresaKey,
-    sucursalKey,
+    empresaKey, sucursalKey,
 
-    // actions
-    initFromProfile,
     ensureEmpresaSet,
     loadSucursales,
     changeEmpresa,
     changeSucursal,
-
-    // alias compat
-    setEmpresa,
-    setSucursal,
   }
 })

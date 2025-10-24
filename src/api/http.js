@@ -6,21 +6,24 @@ import axios from "axios";
  * - VITE_API_BASE_URL: ej. http://127.0.0.1:8000/api/v1
  * - VITE_TOKEN_STORAGE_KEY (opcional)
  * - VITE_EMPRESA_STORAGE_KEY (opcional)
+ * - VITE_SUCURSAL_STORAGE_KEY (opcional)
  */
 const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 export const TOKEN_STORAGE_KEY =
   import.meta.env.VITE_TOKEN_STORAGE_KEY || "agora.tokens";
 export const EMPRESA_STORAGE_KEY =
   import.meta.env.VITE_EMPRESA_STORAGE_KEY || "agora.empresa";
+export const SUCURSAL_STORAGE_KEY =
+  import.meta.env.VITE_SUCURSAL_STORAGE_KEY || "agora.sucursal";
 
 /** Normaliza baseURL: sin trailing slash */
 const BASE_URL = RAW_BASE_URL.replace(/\/+$/, "");
 
-/** ===== Empresa (contexto) ===== */
+/** ===== Empresa/Sucursal (contexto) ===== */
 let currentEmpresaId = null;
+let currentSucursalId = null;
 
 export function setEmpresaId(id) {
-  // Guarda siempre como string, o borra si vacío/null
   currentEmpresaId = id != null && id !== "" ? String(id) : null;
   if (currentEmpresaId) {
     localStorage.setItem(EMPRESA_STORAGE_KEY, currentEmpresaId);
@@ -28,12 +31,26 @@ export function setEmpresaId(id) {
     localStorage.removeItem(EMPRESA_STORAGE_KEY);
   }
 }
-
 export function getEmpresaId() {
   if (currentEmpresaId) return currentEmpresaId;
   const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
   currentEmpresaId = raw || null;
   return currentEmpresaId;
+}
+
+export function setSucursalId(id) {
+  currentSucursalId = id != null && id !== "" ? String(id) : null;
+  if (currentSucursalId) {
+    localStorage.setItem(SUCURSAL_STORAGE_KEY, currentSucursalId);
+  } else {
+    localStorage.removeItem(SUCURSAL_STORAGE_KEY);
+  }
+}
+export function getSucursalId() {
+  if (currentSucursalId) return currentSucursalId;
+  const raw = localStorage.getItem(SUCURSAL_STORAGE_KEY);
+  currentSucursalId = raw || null;
+  return currentSucursalId;
 }
 
 /** ===== Tokens ===== */
@@ -45,16 +62,16 @@ export function getTokens() {
     return null;
   }
 }
-
 export function saveTokens(tokens) {
   localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
 }
-
 export function clearTokens() {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
-  // Al cerrar sesión, limpia también la empresa activa
+  // Al cerrar sesión, limpia también el contexto
   localStorage.removeItem(EMPRESA_STORAGE_KEY);
+  localStorage.removeItem(SUCURSAL_STORAGE_KEY);
   currentEmpresaId = null;
+  currentSucursalId = null;
 }
 
 /** ===== Cliente axios =====
@@ -68,7 +85,6 @@ const http = axios.create({
 /** ===== Refresh queue state ===== */
 let isRefreshing = false;
 let refreshQueue = [];
-
 function flushRefreshQueue(error, newAccessToken = null) {
   refreshQueue.forEach(({ resolve, reject }) => {
     if (error) reject(error);
@@ -85,14 +101,17 @@ http.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${tokens.access}`;
   }
 
-  // Contexto de empresa (header). Ajusta el nombre si tu backend espera otro.
+  // Contexto de empresa/sucursal
   const emp = getEmpresaId();
-  if (emp) {
-    config.headers["X-Empresa-Id"] = emp; // <-- usa este header en tu backend
-    // Si tu backend espera "X-Empresa", cambia la línea de arriba por:
-    // config.headers["X-Empresa"] = emp;
-  }
+  if (emp) config.headers["X-Empresa-Id"] = emp;
 
+  const suc = getSucursalId();
+  if (suc && suc !== "all") {
+    config.headers["X-Sucursal-Id"] = suc; // solo numérico
+  } else {
+    // por si acaso algún cliente dejó algo previo
+    delete config.headers["X-Sucursal-Id"];
+  }
   return config;
 });
 
@@ -101,7 +120,6 @@ http.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
-
     if (!original || original.__isRetryRequest) {
       return Promise.reject(error);
     }
@@ -160,3 +178,11 @@ http.interceptors.response.use(
 );
 
 export default http;
+
+/** Helpers opcionales para usar desde stores/layouts */
+export const system = {
+  setEmpresa: (id) => setEmpresaId(id),
+  setSucursal: (id) => setSucursalId(id),
+  getEmpresa: () => getEmpresaId(),
+  getSucursal: () => getSucursalId(),
+};
