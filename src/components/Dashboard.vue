@@ -666,7 +666,12 @@ function updateGridInteractivity() {
   grid.setStatic(!editable)
   grid.enableMove(editable, true)
   grid.enableResize(editable, true)
-  grid.setMargin(`${GRID_MARGIN}px`)
+  if (grid.opts) {
+    grid.opts.margin = `${GRID_MARGIN}px`
+  }
+  if (grid.el?.style) {
+    grid.el.style.setProperty('--gs-grid-margin', `${GRID_MARGIN}px`)
+  }
   const nodes = grid.engine?.nodes || []
   nodes.forEach((node) => {
     if (!node?.el) return
