@@ -545,7 +545,6 @@ function renderGrid() {
   const grid = gridInstance.value
   if (!grid) return
   suppressGridSync = true
-  detachAllWidgetApps()
   const widgets = []
   for (const entry of layoutOrdered.value) {
     if (!entry.visible) continue
@@ -570,6 +569,14 @@ function renderGrid() {
     })
   }
   grid.load(widgets, true)
+  const nodes = grid.engine?.nodes || []
+  nodes.forEach((node) => {
+    const id = node?.id ?? node?.el?.dataset?.gsId ?? node?.el?.getAttribute?.('data-gs-id')
+    if (!id || !moduleMap.has(String(id))) return
+    const host = node.el?.querySelector?.('.grid-stack-item-content')
+    if (!host) return
+    renderModuleInto(host, String(id))
+  })
   updateGridInteractivity()
   nextTick(() => {
     suppressGridSync = false
